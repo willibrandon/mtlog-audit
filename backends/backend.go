@@ -167,8 +167,7 @@ func Create(config Config) (Backend, error) {
 	case FilesystemConfig:
 		return NewFilesystemBackend(cfg)
 	case S3Config:
-		// TODO: Implement S3 backend
-		return nil, fmt.Errorf("S3 backend not yet implemented")
+		return NewS3Backend(cfg)
 	case AzureConfig:
 		// TODO: Implement Azure backend
 		return nil, fmt.Errorf("Azure backend not yet implemented")

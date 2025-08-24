@@ -3,7 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/willibrandon/mtlog-audit.svg)](https://pkg.go.dev/github.com/willibrandon/mtlog-audit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-The audit sink that cannot lose data. A bulletproof audit logging solution for [mtlog](https://github.com/willibrandon/mtlog) and other Go logging libraries, designed for financial services, healthcare, government, and any application where audit logs are critical.
+The audit sink that cannot lose data. A bulletproof audit logging solution for [mtlog](https://github.com/willibrandon/mtlog), designed for financial services, healthcare, government, and any application where audit logs are critical.
 
 ## 🚧 Work in Progress
 
