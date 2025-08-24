@@ -40,3 +40,6 @@ dist/
 # Torture test results
 torture-results/
 torture-report.html
+
+# Claude settings
+.claude/settings.local.json

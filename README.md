@@ -7,7 +7,7 @@ The audit sink that cannot lose data. A bulletproof audit logging solution for [
 
 ## 🚧 Work in Progress
 
-This project is currently under active development. The core WAL (Write-Ahead Log) implementation is functional, but many features are still being implemented.
+This project is currently under active development. The core WAL (Write-Ahead Log) implementation is functional and has been validated with torture testing, but additional features are still being implemented.
 
 ## Features (Planned)
 
@@ -28,14 +28,14 @@ This project is currently under active development. The core WAL (Write-Ahead Lo
 - WAL record format with CRC32 checksums
 - Basic WAL write operations with O_SYNC durability
 - SHA256 hash chaining for integrity
+- Torture test framework with Kill9DuringWrite scenario
+- CLI tool with `verify` and `torture` commands
 - Basic unit tests
+- 10/10 torture tests passing (process kill simulation)
 
 ### 🚧 In Progress
 - Segment management and rotation
-- Recovery engine for corruption
-- Torture test framework
-- CLI tools
-- Documentation
+- Recovery engine for advanced corruption scenarios
 
 ### 📋 TODO
 - Compliance engine (HIPAA, PCI-DSS, SOX, GDPR)
@@ -99,11 +99,27 @@ make build
 # Run unit tests
 make test
 
+# Run torture tests with build tag
+go test -tags=torture ./torture
+
 # Run benchmarks (when implemented)
 make bench
+```
 
-# Run torture tests (when implemented)
-make torture
+### CLI Tool
+
+```bash
+# Build the CLI
+make build
+
+# Verify WAL integrity
+./bin/mtlog-audit verify --wal /path/to/audit.wal
+
+# Run torture tests
+./bin/mtlog-audit torture --iterations 100 --scenario kill9
+
+# Show version
+./bin/mtlog-audit version
 ```
 
 ## Architecture
