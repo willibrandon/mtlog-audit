@@ -33,6 +33,9 @@ type WAL struct {
 	syncMode    SyncMode
 	closed      atomic.Bool
 	
+	// Segment management
+	segments    *SegmentManager
+	
 	// Buffering for group commit
 	buffer      []byte
 	bufferMu    sync.Mutex
@@ -85,13 +88,22 @@ func New(path string, opts ...Option) (*WAL, error) {
 		return nil, fmt.Errorf("failed to create WAL directory: %w", err)
 	}
 
+	// Initialize segment manager
+	segments, err := NewSegmentManager(path, cfg.segmentSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create segment manager: %w", err)
+	}
+
+	// Get the active segment path
+	activePath := segments.GetActivePath()
+
 	// Open or create WAL file with O_SYNC for durability
 	flags := os.O_CREATE | os.O_RDWR | os.O_APPEND
 	if cfg.syncMode == SyncImmediate {
 		flags |= os.O_SYNC
 	}
 
-	file, err := os.OpenFile(path, flags, 0600)
+	file, err := os.OpenFile(activePath, flags, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WAL file: %w", err)
 	}
@@ -106,6 +118,7 @@ func New(path string, opts ...Option) (*WAL, error) {
 	w := &WAL{
 		path:        path,
 		file:        file,
+		segments:    segments,
 		segmentSize: cfg.segmentSize,
 		currentSize: stat.Size(),
 		syncMode:    cfg.syncMode,
@@ -173,7 +186,7 @@ func (w *WAL) Write(event *core.LogEvent) error {
 	}
 
 	// Check if rotation is needed
-	if w.currentSize >= w.segmentSize {
+	if w.segments.ShouldRotate(w.currentSize) {
 		if err := w.rotate(); err != nil {
 			return fmt.Errorf("rotation failed: %w", err)
 		}
@@ -276,10 +289,9 @@ func (w *WAL) rotate() error {
 		return err
 	}
 
-	// Rename current file with timestamp
-	timestamp := time.Now().Format("20060102-150405")
-	newPath := fmt.Sprintf("%s.%s", w.path, timestamp)
-	if err := os.Rename(w.path, newPath); err != nil {
+	// Use segment manager to rotate
+	newPath, err := w.segments.Rotate(w.sequence)
+	if err != nil {
 		return err
 	}
 
@@ -289,7 +301,7 @@ func (w *WAL) rotate() error {
 		flags |= os.O_SYNC
 	}
 
-	file, err := os.OpenFile(w.path, flags, 0600)
+	file, err := os.OpenFile(newPath, flags, 0600)
 	if err != nil {
 		return err
 	}

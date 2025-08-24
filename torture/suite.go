@@ -2,13 +2,13 @@
 package torture
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	audit "github.com/willibrandon/mtlog-audit"
+	"github.com/willibrandon/mtlog-audit/internal/logger"
 )
 
 // Suite orchestrates torture testing.
@@ -84,7 +84,7 @@ func (s *Suite) Run() (*Report, error) {
 	// Run iterations
 	for i := 0; i < s.config.Iterations; i++ {
 		if s.config.Verbose {
-			fmt.Printf("Iteration %d/%d\n", i+1, s.config.Iterations)
+			logger.Log.Info("Iteration {current}/{total}", i+1, s.config.Iterations)
 		}
 
 		for _, scenario := range s.scenarios {
@@ -98,7 +98,7 @@ func (s *Suite) Run() (*Report, error) {
 
 		// Progress reporting
 		if i > 0 && i%100 == 0 && !s.config.Verbose {
-			fmt.Printf("Progress: %d/%d iterations\n", i, s.config.Iterations)
+			logger.Log.Info("Progress: {current}/{total} iterations", i, s.config.Iterations)
 		}
 	}
 
@@ -165,23 +165,25 @@ func (s *Suite) calculateSuccess(report *Report) bool {
 
 // PrintReport outputs a summary of the test results.
 func (r *Report) PrintReport() {
-	fmt.Println("\n=== TORTURE TEST REPORT ===")
-	fmt.Printf("Duration: %v\n", r.EndTime.Sub(r.StartTime))
-	fmt.Printf("Iterations: %d\n", r.Iterations)
-	fmt.Printf("Overall Success: %v\n\n", r.Success)
+	logger.Log.Info("")
+	logger.Log.Info("=== TORTURE TEST REPORT ===")
+	logger.Log.Info("Duration: {duration}", r.EndTime.Sub(r.StartTime))
+	logger.Log.Info("Iterations: {count}", r.Iterations)
+	logger.Log.Info("Overall Success: {success}", r.Success)
+	logger.Log.Info("")
 
 	for name, result := range r.Scenarios {
-		fmt.Printf("Scenario: %s\n", name)
-		fmt.Printf("  Passed: %d\n", result.Passed)
-		fmt.Printf("  Failed: %d\n", result.Failed)
+		logger.Log.Info("Scenario: {name}", name)
+		logger.Log.Info("  Passed: {count}", result.Passed)
+		logger.Log.Info("  Failed: {count}", result.Failed)
 		if result.Failed > 0 && len(result.Errors) > 0 {
-			fmt.Printf("  Last Error: %v\n", result.Errors[len(result.Errors)-1])
+			logger.Log.Error("  Last Error: {error}", result.Errors[len(result.Errors)-1])
 		}
 		if result.Passed > 0 {
 			avgDuration := result.Duration / time.Duration(result.Passed)
-			fmt.Printf("  Avg Duration: %v\n", avgDuration)
+			logger.Log.Info("  Avg Duration: {duration}", avgDuration)
 		}
-		fmt.Println()
+		logger.Log.Info("")
 	}
 
 	// Final summary
@@ -192,10 +194,10 @@ func (r *Report) PrintReport() {
 		totalFailed += result.Failed
 	}
 
-	fmt.Printf("TOTAL: %d passed, %d failed\n", totalPassed, totalFailed)
+	logger.Log.Info("TOTAL: {passed} passed, {failed} failed", totalPassed, totalFailed)
 	if r.Success {
-		fmt.Println("✅ ALL TESTS PASSED")
+		logger.Log.Info("✅ ALL TESTS PASSED")
 	} else {
-		fmt.Println("❌ SOME TESTS FAILED")
+		logger.Log.Error("❌ SOME TESTS FAILED")
 	}
 }

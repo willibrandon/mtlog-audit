@@ -2,9 +2,8 @@
 package commands
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
+	"github.com/willibrandon/mtlog-audit/internal/logger"
 )
 
 var (
@@ -28,10 +27,10 @@ func Execute(v string) error {
 		versionCmd(),
 		verifyCmd(),
 		tortureCmd(),
+		recoverCmd(),
 		// TODO: Add more commands
 		// replayCmd(),
 		// monitorCmd(),
-		// recoverCmd(),
 	)
 	
 	return rootCmd.Execute()
@@ -42,7 +41,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("mtlog-audit version %s\n", version)
+			logger.Log.Info("mtlog-audit version {version}", version)
 		},
 	}
 }

@@ -2,95 +2,69 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"time"
 
+	"github.com/willibrandon/mtlog"
 	"github.com/willibrandon/mtlog/core"
 	audit "github.com/willibrandon/mtlog-audit"
 )
 
 func main() {
-	fmt.Println("mtlog-audit Basic Example")
-	fmt.Println("=========================")
-	
-	// Create bulletproof audit sink
+	// Create bulletproof audit sink for critical audit events
 	auditSink, err := audit.New(
 		audit.WithWAL("/tmp/example-audit.wal"),
 		audit.WithPanicOnFailure(), // Panic if we can't write audit logs
 	)
 	if err != nil {
-		log.Fatal("Failed to initialize audit sink:", err)
+		panic("Failed to initialize audit sink: " + err.Error())
 	}
 	defer auditSink.Close()
+
+	// Create logger using mtlog.New() with functional options
+	logger := mtlog.New(
+		mtlog.WithConsole(),
+		mtlog.WithSink(auditSink),
+		mtlog.WithMinimumLevel(core.InformationLevel),
+	)
+
+	// Log application startup
+	logger.Info("mtlog-audit Basic Example")
+	logger.Info("=========================")
+	logger.Info("Audit sink initialized {walPath}", "/tmp/example-audit.wal")
+
+	// Simulate some important events with message templates
+	logger.Info("Application started with version {version}", "1.0.0")
 	
-	fmt.Println("✓ Audit sink initialized")
+	// User activity
+	logger.Info("User {userId} logged in from {ip}", 123, "192.168.1.1")
+	time.Sleep(10 * time.Millisecond)
 	
-	// Simulate some important events
-	events := []struct {
-		level   core.LogEventLevel
-		message string
-		props   map[string]interface{}
-	}{
-		{
-			level:   core.InformationLevel,
-			message: "Application started",
-			props:   map[string]interface{}{"version": "1.0.0"},
-		},
-		{
-			level:   core.InformationLevel,
-			message: "User login",
-			props:   map[string]interface{}{"userId": 123, "ip": "192.168.1.1"},
-		},
-		{
-			level:   core.WarningLevel,
-			message: "Failed login attempt",
-			props:   map[string]interface{}{"userId": 456, "ip": "10.0.0.1", "attempts": 3},
-		},
-		{
-			level:   core.ErrorLevel,
-			message: "Database connection lost",
-			props:   map[string]interface{}{"database": "audit_db", "error": "timeout"},
-		},
-		{
-			level:   core.InformationLevel,
-			message: "Transaction processed",
-			props:   map[string]interface{}{"transactionId": "tx-789", "amount": 99.99, "currency": "USD"},
-		},
-	}
+	// Security event
+	logger.Warn("Failed login attempt for user {userId} from {ip} after {attempts} attempts", 456, "10.0.0.1", 3)
+	time.Sleep(10 * time.Millisecond)
 	
-	// Emit events
-	for i, evt := range events {
-		event := &core.LogEvent{
-			Timestamp:       time.Now(),
-			Level:           evt.level,
-			MessageTemplate: evt.message,
-			Properties:      evt.props,
-		}
-		
-		auditSink.Emit(event)
-		fmt.Printf("✓ Event %d logged: %s\n", i+1, evt.message)
-		
-		// Small delay to simulate real application
-		time.Sleep(10 * time.Millisecond)
-	}
+	// System error
+	logger.Error("Database connection lost to {database}: {error}", "audit_db", "timeout")
+	time.Sleep(10 * time.Millisecond)
 	
+	// Business transaction
+	logger.Info("Transaction {transactionId} processed for {amount:F2} {currency}", "tx-789", 99.99, "USD")
+	time.Sleep(10 * time.Millisecond)
+
 	// Verify integrity
-	fmt.Println("\nVerifying audit log integrity...")
+	logger.Info("Verifying audit log integrity...")
 	report, err := auditSink.VerifyIntegrity()
 	if err != nil {
-		log.Fatal("Integrity verification failed:", err)
+		logger.Fatal("Integrity verification failed: {error}", err)
 	}
-	
+
 	if report.Valid {
-		fmt.Println("✅ Integrity check PASSED")
-		fmt.Printf("   Total records: %d\n", report.TotalRecords)
+		logger.Info("✅ Integrity check PASSED with {totalRecords} records", report.TotalRecords)
 	} else {
-		fmt.Println("❌ Integrity check FAILED")
+		logger.Error("❌ Integrity check FAILED")
 	}
-	
-	fmt.Println("\nExample completed successfully!")
-	fmt.Println("WAL file saved to: /tmp/example-audit.wal")
-	fmt.Println("\nYou can verify it with:")
-	fmt.Println("  ./bin/mtlog-audit verify --wal /tmp/example-audit.wal")
+
+	logger.Info("Example completed successfully!")
+	logger.Info("WAL file saved to: {path}", "/tmp/example-audit.wal")
+	logger.Info("You can verify it with: {command}", "./bin/mtlog-audit verify --wal /tmp/example-audit.wal")
 }

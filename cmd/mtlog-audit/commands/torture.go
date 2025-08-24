@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/willibrandon/mtlog-audit/internal/logger"
 	"github.com/willibrandon/mtlog-audit/torture"
 	"github.com/willibrandon/mtlog-audit/torture/scenarios"
 )
@@ -29,10 +30,10 @@ Available scenarios:
 Example:
   mtlog-audit torture --iterations 1000 --scenario kill9`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Starting torture tests...")
-			fmt.Printf("Iterations: %d\n", iterations)
-			fmt.Printf("Scenario: %s\n", scenario)
-			fmt.Println()
+			logger.Log.Info("Starting torture tests...")
+			logger.Log.Info("Iterations: {count}", iterations)
+			logger.Log.Info("Scenario: {name}", scenario)
+			logger.Log.Info("")
 
 			// Configure test suite
 			cfg := torture.Config{
