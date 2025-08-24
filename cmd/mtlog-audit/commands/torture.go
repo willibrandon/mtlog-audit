@@ -15,6 +15,7 @@ func tortureCmd() *cobra.Command {
 		stopOnFailure bool
 		verbose       bool
 		scenario      string
+		parallel      int
 	)
 
 	cmd := &cobra.Command{
@@ -27,12 +28,17 @@ Available scenarios:
 - kill9: Simulates process termination during writes
 - all: Run all available scenarios (default)
 
-Example:
-  mtlog-audit torture --iterations 1000 --scenario kill9`,
+Examples:
+  mtlog-audit torture --iterations 1000 --scenario kill9
+  mtlog-audit torture --iterations 10000 --parallel 8  # Run with 8 workers
+  mtlog-audit torture --iterations 1000000 --parallel 16  # Million iterations with 16 workers`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger.Log.Info("Starting torture tests...")
 			logger.Log.Info("Iterations: {count}", iterations)
 			logger.Log.Info("Scenario: {name}", scenario)
+			if parallel > 1 {
+				logger.Log.Info("Parallel workers: {count}", parallel)
+			}
 			logger.Log.Info("")
 
 			// Configure test suite
@@ -40,6 +46,7 @@ Example:
 				Iterations:    iterations,
 				StopOnFailure: stopOnFailure,
 				Verbose:       verbose,
+				TempDir:       "/tmp",
 			}
 
 			suite := torture.NewSuite(cfg)
@@ -58,8 +65,16 @@ Example:
 			}
 
 			// Run the torture tests
-			report, err := suite.Run()
-			if err != nil {
+			var report *torture.Report
+			var err error
+			
+			if parallel > 1 {
+				report, err = suite.RunParallel(parallel)
+			} else {
+				report, err = suite.Run()
+			}
+			
+			if err != nil && !stopOnFailure {
 				return fmt.Errorf("torture test failed: %w", err)
 			}
 
@@ -75,6 +90,7 @@ Example:
 	}
 
 	cmd.Flags().IntVar(&iterations, "iterations", 100, "Number of iterations to run")
+	cmd.Flags().IntVar(&parallel, "parallel", 1, "Number of parallel workers (default 1, 0 = num CPUs)")
 	cmd.Flags().BoolVar(&stopOnFailure, "stop-on-failure", false, "Stop on first failure")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 	cmd.Flags().StringVar(&scenario, "scenario", "all", "Scenario to run (kill9, all)")

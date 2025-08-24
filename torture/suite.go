@@ -2,9 +2,12 @@
 package torture
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	audit "github.com/willibrandon/mtlog-audit"
@@ -49,6 +52,7 @@ type ScenarioResult struct {
 	Failed   int
 	Errors   []error
 	Duration time.Duration
+	mu       sync.Mutex // For thread-safe updates
 }
 
 // NewSuite creates a new torture test suite.
@@ -106,6 +110,151 @@ func (s *Suite) Run() (*Report, error) {
 	report.Success = s.calculateSuccess(report)
 
 	return report, nil
+}
+
+// RunParallel executes scenarios in parallel for faster testing
+func (s *Suite) RunParallel(workers int) (*Report, error) {
+	if workers <= 0 {
+		workers = runtime.NumCPU()
+	}
+	
+	logger.Log.Info("Running parallel torture test with {workers} workers", workers)
+	
+	report := &Report{
+		StartTime:  time.Now(),
+		Iterations: s.config.Iterations,
+		Scenarios:  make(map[string]*ScenarioResult),
+	}
+	
+	// Initialize results
+	for _, scenario := range s.scenarios {
+		report.Scenarios[scenario.Name()] = &ScenarioResult{}
+	}
+	
+	// Work queue
+	type work struct {
+		scenario  Scenario
+		iteration int
+	}
+	workChan := make(chan work, workers*2)
+	
+	// Progress tracking
+	var completed int64
+	
+	// Start workers
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for w := range workChan {
+				s.runScenarioParallel(w.scenario, report, w.iteration, workerID)
+				
+				// Progress reporting
+				current := atomic.AddInt64(&completed, 1)
+				if current%100 == 0 {
+					logger.Log.Info("Progress: {current}/{total} scenario runs completed", 
+						current, s.config.Iterations*len(s.scenarios))
+				}
+			}
+		}(w)
+	}
+	
+	// Queue work
+	for i := 0; i < s.config.Iterations; i++ {
+		for _, scenario := range s.scenarios {
+			select {
+			case workChan <- work{scenario: scenario, iteration: i}:
+			default:
+				// Channel full, wait a bit
+				time.Sleep(10 * time.Millisecond)
+				workChan <- work{scenario: scenario, iteration: i}
+			}
+			
+			// Check for early termination on failure
+			if s.config.StopOnFailure {
+				for _, result := range report.Scenarios {
+					result.mu.Lock()
+					failed := result.Failed
+					result.mu.Unlock()
+					if failed > 0 {
+						close(workChan)
+						wg.Wait()
+						report.EndTime = time.Now()
+						return report, fmt.Errorf("stopped on failure")
+					}
+				}
+			}
+		}
+	}
+	close(workChan)
+	
+	// Wait for completion
+	wg.Wait()
+	
+	report.EndTime = time.Now()
+	report.Success = s.calculateSuccess(report)
+	
+	return report, nil
+}
+
+// runScenarioParallel executes a single scenario in parallel
+func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration int, workerID int) {
+	result := report.Scenarios[scenario.Name()]
+	startTime := time.Now()
+	
+	// Create isolated test directory with worker ID to avoid conflicts
+	dir := fmt.Sprintf("%s/torture-w%d-i%d-%d", 
+		s.config.TempDir, workerID, iteration, time.Now().UnixNano())
+	
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		result.mu.Lock()
+		result.Failed++
+		result.Errors = append(result.Errors, err)
+		result.mu.Unlock()
+		return
+	}
+	defer os.RemoveAll(dir)
+	
+	// Create sink
+	sink, err := audit.New(
+		audit.WithWAL(filepath.Join(dir, "test.wal")),
+	)
+	if err != nil {
+		result.mu.Lock()
+		result.Failed++
+		result.Errors = append(result.Errors, err)
+		result.mu.Unlock()
+		return
+	}
+	
+	// Execute scenario
+	if err := scenario.Execute(sink, dir); err != nil {
+		result.mu.Lock()
+		result.Failed++
+		result.Errors = append(result.Errors, err)
+		result.mu.Unlock()
+		sink.Close()
+		return
+	}
+	
+	// Close sink (simulates crash/shutdown)
+	sink.Close()
+	
+	// Verify results
+	if err := scenario.Verify(dir); err != nil {
+		result.mu.Lock()
+		result.Failed++
+		result.Errors = append(result.Errors, err)
+		result.mu.Unlock()
+		return
+	}
+	
+	// Success
+	result.mu.Lock()
+	result.Passed++
+	result.Duration += time.Since(startTime)
+	result.mu.Unlock()
 }
 
 func (s *Suite) runScenario(scenario Scenario, report *Report) error {

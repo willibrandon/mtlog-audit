@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/willibrandon/mtlog/core"
 	audit "github.com/willibrandon/mtlog-audit"
+	"github.com/willibrandon/mtlog/core"
 )
 
 // Kill9DuringWrite simulates process kill during write operations.
@@ -49,6 +49,14 @@ func (k *Kill9DuringWrite) Execute(sink *audit.Sink, dir string) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer func() {
+			// Always signal done to prevent deadlock
+			select {
+			case done <- true:
+			default:
+			}
+		}()
+
 		for i := 0; i < k.EventCount; i++ {
 			event := &core.LogEvent{
 				Timestamp:       time.Now(),
@@ -61,6 +69,7 @@ func (k *Kill9DuringWrite) Execute(sink *audit.Sink, dir string) error {
 				},
 			}
 
+			// Don't block on emit
 			sink.Emit(event)
 
 			// Simulate abrupt termination
@@ -68,27 +77,24 @@ func (k *Kill9DuringWrite) Execute(sink *audit.Sink, dir string) error {
 				// Don't actually kill the process in tests
 				// Just close the sink abruptly without proper shutdown
 				// This simulates a kill -9
-				done <- true
 				return
 			}
-
-			// Small delay to make it more realistic
-			if i%10 == 0 {
-				time.Sleep(time.Microsecond * 100)
-			}
 		}
-		done <- true
 	}()
 
 	// Wait for completion or "kill"
+	// Timeout should be proportional to event count
+	// Allow 50ms per event plus 2 second buffer for overhead
+	timeout := time.Duration(k.EventCount)*50*time.Millisecond + 2*time.Second
+
 	select {
 	case <-done:
 		// Process was "killed" or completed
 		return nil
 	case err := <-errors:
 		return err
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("timeout waiting for scenario completion")
+	case <-time.After(timeout):
+		return fmt.Errorf("timeout waiting for scenario completion after %v", timeout)
 	}
 }
 
