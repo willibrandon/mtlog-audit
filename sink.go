@@ -9,6 +9,8 @@ import (
 	"github.com/willibrandon/mtlog/core"
 	"github.com/willibrandon/mtlog-audit/backends"
 	"github.com/willibrandon/mtlog-audit/compliance"
+	"github.com/willibrandon/mtlog-audit/monitoring"
+	"github.com/willibrandon/mtlog-audit/resilience"
 	"github.com/willibrandon/mtlog-audit/wal"
 )
 
@@ -45,8 +47,8 @@ type Sink struct {
 	closed     bool
 	compliance *compliance.Engine
 	backends   []backends.Backend
-	resilience interface{} // *resilience.Manager - simplified for now
-	monitoring interface{} // *monitoring.Manager - simplified for now
+	resilience *resilience.Manager
+	monitoring *monitoring.Monitor
 }
 
 // Ensure we implement the interface
@@ -103,18 +105,31 @@ func New(opts ...Option) (*Sink, error) {
 		sink.backends = append(sink.backends, backend)
 	}
 
-	// Initialize resilience manager - simplified for now
-	// sink.resilience = resilience.NewManager(resilience.Config{
-	//     MaxRetries:     3,
-	//     BackoffFactor:  2.0,
-	//     CircuitBreaker: true,
-	// })
+	// Initialize resilience manager
+	resilienceOpts := []resilience.Option{}
+	if config.CircuitBreakerOptions != nil {
+		// Apply circuit breaker options if provided
+		for _, opt := range config.CircuitBreakerOptions {
+			if fn, ok := opt.(resilience.Option); ok {
+				resilienceOpts = append(resilienceOpts, fn)
+			}
+		}
+	}
+	sink.resilience = resilience.New(resilienceOpts...)
 
-	// Start monitoring if configured - simplified for now
-	// if config.MonitoringEnabled {
-	//     sink.monitoring = monitoring.NewManager()
-	//     sink.monitoring.Start()
-	// }
+	// Initialize monitoring
+	monitorConfig := monitoring.DefaultConfig()
+	if config.MetricsOptions != nil {
+		// Apply metrics options if provided
+		for _, opt := range config.MetricsOptions {
+			if cfg, ok := opt.(*monitoring.Config); ok {
+				monitorConfig = cfg
+				break
+			}
+		}
+	}
+	sink.monitoring = monitoring.NewMonitor(monitorConfig)
+	sink.monitoring.Start()
 
 	return sink, nil
 }
@@ -137,9 +152,9 @@ func (s *Sink) Emit(event *core.LogEvent) {
 	}
 
 	// Add monitoring
-	// if s.monitoring != nil {
-	//     s.monitoring.RecordEmit()
-	// }
+	if s.monitoring != nil {
+		s.monitoring.RecordEmit()
+	}
 
 	// Write to WAL with guaranteed durability
 	if err := s.writeToWAL(event); err != nil {
@@ -182,10 +197,10 @@ func (s *Sink) Close() error {
 		}
 	}
 
-	// Stop monitoring - simplified for now
-	// if s.monitoring != nil {
-	//     s.monitoring.Stop()
-	// }
+	// Stop monitoring
+	if s.monitoring != nil {
+		s.monitoring.Stop()
+	}
 
 	return nil
 }
@@ -243,20 +258,20 @@ func (s *Sink) WALPath() string {
 // Private methods
 
 func (s *Sink) writeToWAL(event *core.LogEvent) error {
-	// Add resilience wrapper if configured - simplified for now
-	// if s.resilience != nil {
-	//     return s.resilience.Execute(func() error {
-	//         return s.wal.Write(event)
-	//     })
-	// }
+	// Add resilience wrapper if configured
+	if s.resilience != nil {
+		return s.resilience.Execute(func() error {
+			return s.wal.Write(event)
+		})
+	}
 	return s.wal.Write(event)
 }
 
 func (s *Sink) handleCriticalFailure(event *core.LogEvent, err error) {
-	// Record in monitor - simplified for now
-	// if s.monitoring != nil {
-	//     s.monitoring.RecordCriticalFailure(err)
-	// }
+	// Record in monitor
+	if s.monitoring != nil {
+		s.monitoring.RecordCriticalFailure(err)
+	}
 	
 	if s.config.FailureHandler != nil {
 		s.config.FailureHandler(event, err)
@@ -272,10 +287,26 @@ func (s *Sink) handleCriticalFailure(event *core.LogEvent, err error) {
 
 // replicateToBackend replicates events to a specific backend
 func (s *Sink) replicateToBackend(backend backends.Backend, event *core.LogEvent) {
-	// Simplified - just write directly
-	if err := backend.Write(event); err != nil {
+	// Use resilience manager for backend writes
+	var writeErr error
+	if s.resilience != nil {
+		writeErr = s.resilience.ExecuteWithBreaker(backend.Name(), func() error {
+			return backend.Write(event)
+		})
+	} else {
+		writeErr = backend.Write(event)
+	}
+	
+	if writeErr != nil {
+		// Record failure in monitoring
+		if s.monitoring != nil {
+			s.monitoring.RecordBackendFailure(backend.Name(), writeErr)
+		}
 		// Log error but don't fail - this is async replication
-		fmt.Fprintf(os.Stderr, "Backend %s replication error: %v\n", backend.Name(), err)
+		fmt.Fprintf(os.Stderr, "Backend %s replication error: %v\n", backend.Name(), writeErr)
+	} else if s.monitoring != nil {
+		// Record success
+		s.monitoring.RecordBackendSuccess(backend.Name())
 	}
 }
 
@@ -283,8 +314,16 @@ func (s *Sink) cleanup() {
 	if s.wal != nil {
 		s.wal.Close()
 	}
-	// Close backends when implemented
-	// Stop monitor when implemented
+	
+	// Close backends
+	for _, backend := range s.backends {
+		backend.Close()
+	}
+	
+	// Stop monitor
+	if s.monitoring != nil {
+		s.monitoring.Stop()
+	}
 }
 
 // Replay reads events from the WAL within a time range

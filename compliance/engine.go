@@ -3,6 +3,7 @@ package compliance
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -346,16 +347,34 @@ func (e *Engine) maskSensitiveData(event *core.LogEvent) {
 	
 	// Also check message template for sensitive data
 	if event.MessageTemplate != "" {
+		maskedText := event.MessageTemplate
+		
+		// Define regex patterns for common sensitive data
+		patterns := map[string]*regexp.Regexp{
+			"SSN":         regexp.MustCompile(`\b\d{3}-?\d{2}-?\d{4}\b`),
+			"CREDITCARD":  regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`),
+			"EMAIL":       regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`),
+			"PHONE":       regexp.MustCompile(`\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`),
+			"IP":          regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`),
+			"MRN":         regexp.MustCompile(`\b[A-Z]{2}\d{6,8}\b`), // Medical Record Number
+			"PAN":         regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`), // Payment card
+		}
+		
+		// Apply regex patterns based on profile requirements
 		for _, sensitive := range e.profile.MaskSensitive {
-			if strings.Contains(strings.ToLower(event.MessageTemplate), strings.ToLower(sensitive)) {
-				// Create a new template with masked content
-				maskedText := event.MessageTemplate
-				// Simple masking - in production, use regex for better masking
-				maskedText = strings.ReplaceAll(maskedText, sensitive, "[REDACTED]")
-				event.MessageTemplate = maskedText
-				break
+			sensitiveUpper := strings.ToUpper(sensitive)
+			
+			// Use regex if we have a pattern for this type
+			if pattern, ok := patterns[sensitiveUpper]; ok {
+				maskedText = pattern.ReplaceAllString(maskedText, "[REDACTED]")
+			} else {
+				// Fall back to case-insensitive keyword replacement
+				re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(sensitive) + `\b`)
+				maskedText = re.ReplaceAllString(maskedText, "[REDACTED]")
 			}
 		}
+		
+		event.MessageTemplate = maskedText
 	}
 }
 

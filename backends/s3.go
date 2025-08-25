@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"path"
 	"sync"
 	"sync/atomic"
@@ -642,9 +643,19 @@ func getS3Endpoint() string {
 
 // isLocalStackRunning checks if LocalStack is running
 func isLocalStackRunning(endpoint string) bool {
-	// Simple check - in production, use proper health check
-	// For now, assume it's running if we're in test mode
-	return endpoint != ""
+	if endpoint == "" {
+		return false
+	}
+	
+	// Actually check if LocalStack is reachable
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(endpoint + "/_localstack/health")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	
+	return resp.StatusCode == 200
 }
 
 // GetStats returns backend statistics

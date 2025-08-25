@@ -8,6 +8,38 @@ import (
 	"time"
 )
 
+// Config represents monitoring configuration
+type Config struct {
+	UpdateInterval time.Duration
+	EnableProfiler bool
+	WindowSize     int
+}
+
+// DefaultConfig returns default monitoring configuration
+func DefaultConfig() *Config {
+	return &Config{
+		UpdateInterval: 10 * time.Second,
+		EnableProfiler: false,
+		WindowSize:     60,
+	}
+}
+
+// NewMonitor creates a new monitor from config
+func NewMonitor(cfg *Config) *Monitor {
+	if cfg == nil {
+		cfg = DefaultConfig()
+	}
+	
+	m := &Monitor{
+		updateInterval: cfg.UpdateInterval,
+		enableProfiler: cfg.EnableProfiler,
+		windowSize:     cfg.WindowSize,
+		eventWindow:    make([]int64, cfg.WindowSize),
+	}
+	
+	return m
+}
+
 // Monitor manages monitoring and metrics collection
 type Monitor struct {
 	mu            sync.RWMutex
@@ -118,15 +150,33 @@ func (m *Monitor) RecordError(err error) {
 	EventsWritten.WithLabelValues("failure", "unknown").Inc()
 }
 
+// RecordEmit records an event emission
+func (m *Monitor) RecordEmit() {
+	m.IncrementEventCount()
+	EventsWritten.WithLabelValues("success", "audit").Inc()
+}
+
 // RecordCriticalFailure records a critical failure
-func (m *Monitor) RecordCriticalFailure() {
+func (m *Monitor) RecordCriticalFailure(err error) {
 	m.IncrementErrorCount()
 	UpdateIntegrityScore(0) // Critical failure drops integrity to 0
+	EventsWritten.WithLabelValues("failure", "audit").Inc()
 }
 
 // RecordBackendError records a backend error
 func (m *Monitor) RecordBackendError(backend string, err error) {
 	BackendOperations.WithLabelValues(backend, "write", "failure").Inc()
+}
+
+// RecordBackendFailure records a backend failure
+func (m *Monitor) RecordBackendFailure(backend string, err error) {
+	m.IncrementErrorCount()
+	BackendOperations.WithLabelValues(backend, "write", "failure").Inc()
+}
+
+// RecordBackendSuccess records a successful backend operation
+func (m *Monitor) RecordBackendSuccess(backend string) {
+	BackendOperations.WithLabelValues(backend, "write", "success").Inc()
 }
 
 // GetStats returns current statistics

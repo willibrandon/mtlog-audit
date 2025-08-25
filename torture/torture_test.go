@@ -4,6 +4,7 @@
 package torture
 
 import (
+	"os"
 	"testing"
 
 	"github.com/willibrandon/mtlog-audit/torture/scenarios"
@@ -11,8 +12,17 @@ import (
 
 func TestTorture(t *testing.T) {
 	// Configure the torture test
+	iterations := 10
+	if testing.Short() {
+		iterations = 10 // Quick test for CI
+	} else if os.Getenv("TORTURE_PRODUCTION") == "true" {
+		iterations = 1000000 // Full production torture test
+	} else {
+		iterations = 1000 // Standard test run
+	}
+	
 	cfg := Config{
-		Iterations:    10, // Start with 10 for testing, will be 1000000 in production
+		Iterations:    iterations,
 		StopOnFailure: false,
 		Verbose:       testing.Verbose(),
 	}
