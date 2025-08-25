@@ -123,6 +123,22 @@ func WithMaskingDisabled() Option {
 	}
 }
 
+// WithRetentionDays sets the retention period in days
+func WithRetentionDays(days int) Option {
+	return func(e *Engine) error {
+		if days < e.profile.MinRetentionDays {
+			return fmt.Errorf("retention days %d is less than minimum %d for profile %s", 
+				days, e.profile.MinRetentionDays, e.profile.Name)
+		}
+		if days > e.profile.MaxRetentionDays {
+			return fmt.Errorf("retention days %d exceeds maximum %d for profile %s", 
+				days, e.profile.MaxRetentionDays, e.profile.Name)
+		}
+		e.profile.RetentionDays = days
+		return nil
+	}
+}
+
 // Transform applies compliance transformations to a log event
 func (e *Engine) Transform(event *core.LogEvent) *core.LogEvent {
 	e.mu.Lock()

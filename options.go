@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/willibrandon/mtlog/core"
+	"github.com/willibrandon/mtlog-audit/backends"
+	"github.com/willibrandon/mtlog-audit/compliance"
 	"github.com/willibrandon/mtlog-audit/wal"
 )
 
@@ -19,15 +21,15 @@ type Config struct {
 
 	// Compliance
 	ComplianceProfile string
-	// ComplianceOptions  []compliance.Option // TODO: Add when compliance is implemented
+	ComplianceOptions []compliance.Option
 
 	// Backends
-	// Backends []backends.Config // TODO: Add when backends are implemented
+	BackendConfigs []backends.Config
 
 	// Resilience
 	FailureHandler FailureHandler
 	RetryPolicy    RetryPolicy
-	// CircuitBreakerOptions []resilience.Option // TODO: Add when resilience is implemented
+	CircuitBreakerOptions []interface{} // Placeholder for resilience.Option
 	PanicOnFailure bool
 
 	// Performance
@@ -36,7 +38,7 @@ type Config struct {
 	GroupCommitDelay time.Duration
 
 	// Monitoring
-	// MetricsOptions []monitoring.Option // TODO: Add when monitoring is implemented
+	MetricsOptions []interface{} // Placeholder for monitoring.Option
 }
 
 // FailureHandler is called when audit write fails.
@@ -63,7 +65,30 @@ func WithWAL(path string, opts ...wal.Option) Option {
 func WithCompliance(profile string) Option {
 	return func(c *Config) error {
 		c.ComplianceProfile = profile
-		// TODO: Validate profile when compliance is implemented
+		return nil
+	}
+}
+
+// WithComplianceOptions adds compliance configuration options.
+func WithComplianceOptions(opts ...compliance.Option) Option {
+	return func(c *Config) error {
+		c.ComplianceOptions = append(c.ComplianceOptions, opts...)
+		return nil
+	}
+}
+
+// WithCircuitBreakerOptions adds circuit breaker configuration options.
+func WithCircuitBreakerOptions(opts ...interface{}) Option {
+	return func(c *Config) error {
+		c.CircuitBreakerOptions = append(c.CircuitBreakerOptions, opts...)
+		return nil
+	}
+}
+
+// WithMetricsOptions adds monitoring/metrics configuration options.
+func WithMetricsOptions(opts ...interface{}) Option {
+	return func(c *Config) error {
+		c.MetricsOptions = append(c.MetricsOptions, opts...)
 		return nil
 	}
 }
@@ -88,6 +113,17 @@ func WithPanicOnFailure() Option {
 func WithWALSyncMode(mode wal.SyncMode) Option {
 	return func(c *Config) error {
 		c.WALOptions = append(c.WALOptions, wal.WithSyncMode(mode))
+		return nil
+	}
+}
+
+// WithBackend adds a backend configuration.
+func WithBackend(backend backends.Config) Option {
+	return func(c *Config) error {
+		if err := backend.Validate(); err != nil {
+			return fmt.Errorf("invalid backend config: %w", err)
+		}
+		c.BackendConfigs = append(c.BackendConfigs, backend)
 		return nil
 	}
 }
@@ -149,12 +185,12 @@ func (c *Config) validate() error {
 		return fmt.Errorf("WAL path is required")
 	}
 
-	// TODO: Validate compliance profile when implemented
-	// if c.ComplianceProfile != "" {
-	//     if !compliance.IsValidProfile(c.ComplianceProfile) {
-	//         return fmt.Errorf("invalid compliance profile: %s", c.ComplianceProfile)
-	//     }
-	// }
+	// Validate compliance profile
+	if c.ComplianceProfile != "" {
+		if !compliance.IsValidProfile(c.ComplianceProfile) {
+			return fmt.Errorf("invalid compliance profile: %s", c.ComplianceProfile)
+		}
+	}
 
 	return nil
 }

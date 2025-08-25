@@ -28,9 +28,8 @@ func Execute(v string) error {
 		verifyCmd(),
 		tortureCmd(),
 		recoverCmd(),
-		// TODO: Add more commands
-		// replayCmd(),
-		// monitorCmd(),
+		replayCmd(),
+		monitorCmd(),
 	)
 	
 	return rootCmd.Execute()

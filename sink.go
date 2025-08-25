@@ -44,7 +44,7 @@ type Sink struct {
 	config     *Config
 	closed     bool
 	compliance *compliance.Engine
-	backend    backends.Backend
+	backends   []backends.Backend
 	resilience interface{} // *resilience.Manager - simplified for now
 	monitoring interface{} // *monitoring.Manager - simplified for now
 }
@@ -86,15 +86,22 @@ func New(opts ...Option) (*Sink, error) {
 
 	// Initialize compliance engine if configured
 	if config.ComplianceProfile != "" {
-		sink.compliance, err = compliance.New(config.ComplianceProfile)
+		sink.compliance, err = compliance.New(config.ComplianceProfile, config.ComplianceOptions...)
 		if err != nil {
 			walInstance.Close()
 			return nil, fmt.Errorf("compliance init failed: %w", err)
 		}
 	}
 
-	// Initialize backends - simplified for now
-	// TODO: Add backend configuration when needed
+	// Initialize backends
+	for _, backendConfig := range config.BackendConfigs {
+		backend, err := backends.Create(backendConfig)
+		if err != nil {
+			walInstance.Close()
+			return nil, fmt.Errorf("failed to create backend: %w", err)
+		}
+		sink.backends = append(sink.backends, backend)
+	}
 
 	// Initialize resilience manager - simplified for now
 	// sink.resilience = resilience.NewManager(resilience.Config{
@@ -142,8 +149,8 @@ func (s *Sink) Emit(event *core.LogEvent) {
 	}
 
 	// Asynchronously replicate to backends
-	if s.backend != nil {
-		go s.replicateToBackend(event)
+	for _, backend := range s.backends {
+		go s.replicateToBackend(backend, event)
 	}
 }
 
@@ -169,8 +176,8 @@ func (s *Sink) Close() error {
 	}
 
 	// Close backends
-	if s.backend != nil {
-		if err := s.backend.Close(); err != nil {
+	for _, backend := range s.backends {
+		if err := backend.Close(); err != nil {
 			return fmt.Errorf("backend close: %w", err)
 		}
 	}
@@ -209,10 +216,11 @@ func (s *Sink) VerifyIntegrity() (*IntegrityReport, error) {
 	}
 
 	// Verify backend consistency
-	if s.backend != nil {
-		backendReport, err := s.backend.VerifyIntegrity()
+	for _, backend := range s.backends {
+		backendReport, err := backend.VerifyIntegrity()
 		if err != nil {
-			return nil, fmt.Errorf("backend verification failed: %w", err)
+			report.BackendErrors = append(report.BackendErrors, err)
+			continue
 		}
 		report.BackendReports = append(report.BackendReports, backendReport)
 		if !backendReport.Valid {
@@ -262,12 +270,12 @@ func (s *Sink) handleCriticalFailure(event *core.LogEvent, err error) {
 	fmt.Fprintf(os.Stderr, "CRITICAL: Failed to write audit event: %v\n", err)
 }
 
-// replicateToBackend replicates events to configured backends
-func (s *Sink) replicateToBackend(event *core.LogEvent) {
+// replicateToBackend replicates events to a specific backend
+func (s *Sink) replicateToBackend(backend backends.Backend, event *core.LogEvent) {
 	// Simplified - just write directly
-	if err := s.backend.Write(event); err != nil {
+	if err := backend.Write(event); err != nil {
 		// Log error but don't fail - this is async replication
-		fmt.Fprintf(os.Stderr, "Backend replication error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Backend %s replication error: %v\n", backend.Name(), err)
 	}
 }
 

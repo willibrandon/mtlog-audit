@@ -55,13 +55,16 @@ Examples:
 			switch scenario {
 			case "kill9":
 				suite.RegisterScenario(scenarios.NewKill9DuringWrite())
+			case "diskfull":
+				suite.RegisterScenario(scenarios.NewDiskFull())
+			case "corruption":
+				suite.RegisterScenario(scenarios.NewRandomCorruption())
 			case "all":
 				suite.RegisterScenario(scenarios.NewKill9DuringWrite())
-				// TODO: Add more scenarios as they're implemented
-				// suite.RegisterScenario(scenarios.NewDiskFull())
-				// suite.RegisterScenario(scenarios.NewRandomCorruption())
+				suite.RegisterScenario(scenarios.NewDiskFull())
+				suite.RegisterScenario(scenarios.NewRandomCorruption())
 			default:
-				return fmt.Errorf("unknown scenario: %s", scenario)
+				return fmt.Errorf("unknown scenario: %s (available: kill9, diskfull, corruption, all)", scenario)
 			}
 
 			// Run the torture tests
