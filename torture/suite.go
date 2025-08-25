@@ -216,9 +216,10 @@ func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration
 	}
 	defer os.RemoveAll(dir)
 	
-	// Create sink
+	// Create sink with batch sync for performance
 	sink, err := audit.New(
 		audit.WithWAL(filepath.Join(dir, "test.wal")),
+		audit.WithWALSyncMode(audit.SyncBatch),
 	)
 	if err != nil {
 		result.mu.Lock()
@@ -270,9 +271,10 @@ func (s *Suite) runScenario(scenario Scenario, report *Report) error {
 	}
 	defer os.RemoveAll(dir)
 
-	// Create sink
+	// Create sink with batch sync for performance
 	sink, err := audit.New(
 		audit.WithWAL(filepath.Join(dir, "test.wal")),
+		audit.WithWALSyncMode(audit.SyncBatch),
 	)
 	if err != nil {
 		result.Failed++

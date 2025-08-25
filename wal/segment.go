@@ -1,6 +1,7 @@
 package wal
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -230,16 +231,46 @@ func (sm *SegmentManager) readSegment(path string) ([][]byte, error) {
 	
 	var records [][]byte
 	
-	// Simple reading - in production, we'd parse the actual record format
+	// Read entire file
 	data, err := io.ReadAll(file)
 	if err != nil {
 		return nil, err
 	}
 	
-	if len(data) > 0 {
-		// For now, treat the entire file as one record
-		// TODO: Implement proper record parsing
-		records = append(records, data)
+	if len(data) == 0 {
+		return nil, nil
+	}
+	
+	// Parse records from binary format
+	offset := 0
+	for offset < len(data) {
+		// Check if we have enough data for header
+		if offset+24 > len(data) { // 24 is minimum header size
+			break
+		}
+		
+		// Read magic number
+		magic := binary.LittleEndian.Uint32(data[offset:])
+		if magic != MagicHeader {
+			break // End of valid records
+		}
+		
+		// Read record length from header (offset 8, 4 bytes)
+		length := binary.LittleEndian.Uint32(data[offset+8:offset+12])
+		
+		// Calculate total record size:
+		// header(24) + sequence(8) + prevhash(32) + data(length) + crc(4) + footer(4)
+		totalSize := 24 + 8 + 32 + int(length) + 4 + 4
+		
+		if offset+totalSize > len(data) {
+			break // Incomplete record
+		}
+		
+		// Extract complete record
+		record := make([]byte, totalSize)
+		copy(record, data[offset:offset+totalSize])
+		records = append(records, record)
+		offset += totalSize
 	}
 	
 	return records, nil

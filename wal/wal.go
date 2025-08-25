@@ -1,7 +1,9 @@
 package wal
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -97,11 +99,9 @@ func New(path string, opts ...Option) (*WAL, error) {
 	// Get the active segment path
 	activePath := segments.GetActivePath()
 
-	// Open or create WAL file with O_SYNC for durability
+	// Open or create WAL file
+	// Note: We don't use O_SYNC as we do explicit syncing
 	flags := os.O_CREATE | os.O_RDWR | os.O_APPEND
-	if cfg.syncMode == SyncImmediate {
-		flags |= os.O_SYNC
-	}
 
 	file, err := os.OpenFile(activePath, flags, 0600)
 	if err != nil {
@@ -180,8 +180,16 @@ func (w *WAL) Write(event *core.LogEvent) error {
 
 	// Sync based on mode
 	if w.syncMode == SyncImmediate {
+		// For immediate mode, sync after every write
 		if err := w.file.Sync(); err != nil {
 			return fmt.Errorf("sync failed: %w", err)
+		}
+	} else if w.syncMode == SyncBatch {
+		// For batch mode, sync every 10 writes or on rotation
+		if w.sequence%10 == 0 {
+			if err := w.file.Sync(); err != nil {
+				return fmt.Errorf("sync failed: %w", err)
+			}
 		}
 	}
 
@@ -235,8 +243,33 @@ func (w *WAL) VerifyIntegrity() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// For now, return success if we can read the file
-	// TODO: Implement full integrity verification
+	// Read all records and verify integrity
+	records, err := w.readAllRecords()
+	if err != nil {
+		return fmt.Errorf("failed to read records: %w", err)
+	}
+
+	// Empty WAL is valid
+	if len(records) == 0 {
+		return nil
+	}
+
+	// Verify hash chain
+	var prevHash [32]byte
+	for i, recordData := range records {
+		record, err := UnmarshalRecord(recordData)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal record %d: %w", i, err)
+		}
+
+		// Verify hash chain (first record should have zero prev hash)
+		if i > 0 && record.PrevHash != prevHash {
+			return fmt.Errorf("hash chain broken at record %d", i)
+		}
+
+		prevHash = record.ComputeHash()
+	}
+
 	return nil
 }
 
@@ -247,37 +280,141 @@ func (w *WAL) VerifyIntegrityReport() (*IntegrityReport, error) {
 
 	report := &IntegrityReport{
 		Valid:        true,
-		LastSequence: w.sequence,
-		TotalRecords: int(w.sequence), // Use the sequence number as record count
+		TotalRecords: 0,
 	}
 
-	// For now, just return the current state
-	// TODO: Implement full verification by reading and checking all records
-	
+	// Read all records and verify integrity
+	records, err := w.readAllRecords()
+	if err != nil {
+		report.Valid = false
+		return report, fmt.Errorf("failed to read records: %w", err)
+	}
+
+	// Empty WAL is valid
+	if len(records) == 0 {
+		return report, nil
+	}
+
+	// Verify each record and hash chain
+	var prevHash [32]byte
+	var lastSeq uint64
+	var lastTime time.Time
+
+	for i, recordData := range records {
+		record, err := UnmarshalRecord(recordData)
+		if err != nil {
+			report.Valid = false
+			report.CorruptedSegments++
+			continue
+		}
+
+		// Verify hash chain
+		if i > 0 && record.PrevHash != prevHash {
+			report.Valid = false
+			report.CorruptedSegments++
+		}
+
+		report.TotalRecords++
+		report.RecoveredRecords++
+		lastSeq = record.Sequence
+		lastTime = time.Unix(0, record.Timestamp)
+		prevHash = record.ComputeHash()
+	}
+
+	report.LastSequence = lastSeq
+	report.LastTimestamp = lastTime
+
 	return report, nil
 }
 
 // Private methods
 
-func (w *WAL) recover() error {
-	// Simple recovery: just count the file size to estimate records
-	// Each record is roughly 100-200 bytes, so use a conservative estimate
+// readAllRecords reads all records from the WAL file
+func (w *WAL) readAllRecords() ([][]byte, error) {
+	// Save current position
+	currentPos, err := w.file.Seek(0, 1)
+	if err != nil {
+		return nil, err
+	}
+	defer w.file.Seek(currentPos, 0)
+
+	// Seek to beginning
+	_, err = w.file.Seek(0, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read entire file
 	stat, err := w.file.Stat()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	
-	// Very rough estimate: assume average record size of 150 bytes
-	// This is just for testing; proper implementation would read all records
-	if stat.Size() > 0 {
-		estimatedRecords := stat.Size() / 150
-		if estimatedRecords > 0 {
-			w.sequence = uint64(estimatedRecords)
-		} else {
-			w.sequence = 1 // At least one record if file has content
+
+	if stat.Size() == 0 {
+		return nil, nil
+	}
+
+	data := make([]byte, stat.Size())
+	_, err = io.ReadFull(w.file, data)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse records
+	var records [][]byte
+	offset := 0
+
+	for offset < len(data) {
+		// Check if we have enough data for header
+		if offset+24 > len(data) { // 24 is minimum header size
+			break
 		}
+
+		// Read magic number
+		magic := binary.LittleEndian.Uint32(data[offset:])
+		if magic != MagicHeader {
+			break // End of valid records
+		}
+
+		// Read record length from header (offset 8, 4 bytes)
+		length := binary.LittleEndian.Uint32(data[offset+8:offset+12])
+		
+		// Calculate total record size:
+		// header(24) + sequence(8) + prevhash(32) + data(length) + crc(4) + footer(4)
+		totalSize := 24 + 8 + 32 + int(length) + 4 + 4
+		
+		if offset+totalSize > len(data) {
+			break // Incomplete record
+		}
+
+		// Extract complete record
+		record := make([]byte, totalSize)
+		copy(record, data[offset:offset+totalSize])
+		records = append(records, record)
+		offset += totalSize
 	}
-	
+
+	return records, nil
+}
+
+func (w *WAL) recover() error {
+	// Read all existing records to recover state
+	records, err := w.readAllRecords()
+	if err != nil {
+		return fmt.Errorf("failed to read records during recovery: %w", err)
+	}
+
+	if len(records) > 0 {
+		// Parse the last record to get sequence and hash
+		lastRecord, err := UnmarshalRecord(records[len(records)-1])
+		if err != nil {
+			return fmt.Errorf("failed to parse last record: %w", err)
+		}
+
+		w.sequence = lastRecord.Sequence
+		w.lastHash = lastRecord.ComputeHash()
+	}
+
 	// Seek to end for appending
 	_, err = w.file.Seek(0, 2)
 	return err

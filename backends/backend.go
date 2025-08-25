@@ -39,6 +39,14 @@ type IntegrityReport struct {
 	Errors           []string  `json:"errors,omitempty"`
 }
 
+// Query represents a query for reading events
+type Query struct {
+	StartTime time.Time
+	EndTime   time.Time
+	Filters   map[string]interface{}
+	Limit     int
+}
+
 // Config defines backend configuration
 type Config interface {
 	Type() string
@@ -169,11 +177,9 @@ func Create(config Config) (Backend, error) {
 	case S3Config:
 		return NewS3Backend(cfg)
 	case AzureConfig:
-		// TODO: Implement Azure backend
-		return nil, fmt.Errorf("Azure backend not yet implemented")
+		return NewAzureBackend(cfg)
 	case GCSConfig:
-		// TODO: Implement GCS backend
-		return nil, fmt.Errorf("GCS backend not yet implemented")
+		return NewGCSBackend(cfg)
 	default:
 		return nil, fmt.Errorf("unknown backend type: %s", config.Type())
 	}

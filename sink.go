@@ -2,11 +2,26 @@ package audit
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/willibrandon/mtlog/core"
+	"github.com/willibrandon/mtlog-audit/backends"
+	"github.com/willibrandon/mtlog-audit/compliance"
 	"github.com/willibrandon/mtlog-audit/wal"
+)
+
+// SyncMode defines when the WAL syncs to disk
+type SyncMode = wal.SyncMode
+
+const (
+	// SyncImmediate syncs after every write (safest, slowest)
+	SyncImmediate = wal.SyncImmediate
+	// SyncInterval syncs periodically
+	SyncInterval = wal.SyncInterval
+	// SyncBatch syncs after a batch of writes
+	SyncBatch = wal.SyncBatch
 )
 
 // IntegrityReport contains the results of an integrity check.
@@ -24,16 +39,14 @@ type IntegrityReport struct {
 // Sink implements a bulletproof audit sink that guarantees delivery.
 // It implements the core.LogEventSink interface from mtlog.
 type Sink struct {
-	mu     sync.RWMutex
-	wal    *wal.WAL
-	config *Config
-	closed bool
-	
-	// TODO: Add these as we implement them
-	// compliance *compliance.Engine
-	// backends   []backends.Backend
-	// resilience *resilience.Manager
-	// monitor    *monitoring.Monitor
+	mu         sync.RWMutex
+	wal        *wal.WAL
+	config     *Config
+	closed     bool
+	compliance *compliance.Engine
+	backend    backends.Backend
+	resilience interface{} // *resilience.Manager - simplified for now
+	monitoring interface{} // *monitoring.Manager - simplified for now
 }
 
 // Ensure we implement the interface
@@ -71,10 +84,30 @@ func New(opts ...Option) (*Sink, error) {
 		config: config,
 	}
 
-	// TODO: Initialize compliance engine if configured
-	// TODO: Initialize backends
-	// TODO: Initialize resilience manager
-	// TODO: Start monitoring
+	// Initialize compliance engine if configured
+	if config.ComplianceProfile != "" {
+		sink.compliance, err = compliance.New(config.ComplianceProfile)
+		if err != nil {
+			walInstance.Close()
+			return nil, fmt.Errorf("compliance init failed: %w", err)
+		}
+	}
+
+	// Initialize backends - simplified for now
+	// TODO: Add backend configuration when needed
+
+	// Initialize resilience manager - simplified for now
+	// sink.resilience = resilience.NewManager(resilience.Config{
+	//     MaxRetries:     3,
+	//     BackoffFactor:  2.0,
+	//     CircuitBreaker: true,
+	// })
+
+	// Start monitoring if configured - simplified for now
+	// if config.MonitoringEnabled {
+	//     sink.monitoring = monitoring.NewManager()
+	//     sink.monitoring.Start()
+	// }
 
 	return sink, nil
 }
@@ -91,8 +124,15 @@ func (s *Sink) Emit(event *core.LogEvent) {
 	}
 	s.mu.RUnlock()
 
-	// TODO: Apply compliance transformations if needed
-	// TODO: Add monitoring
+	// Apply compliance transformations if needed
+	if s.compliance != nil {
+		event = s.compliance.Transform(event)
+	}
+
+	// Add monitoring
+	// if s.monitoring != nil {
+	//     s.monitoring.RecordEmit()
+	// }
 
 	// Write to WAL with guaranteed durability
 	if err := s.writeToWAL(event); err != nil {
@@ -101,7 +141,10 @@ func (s *Sink) Emit(event *core.LogEvent) {
 		return
 	}
 
-	// TODO: Asynchronously replicate to backends
+	// Asynchronously replicate to backends
+	if s.backend != nil {
+		go s.replicateToBackend(event)
+	}
 }
 
 // Close gracefully shuts down the audit sink.
@@ -125,8 +168,17 @@ func (s *Sink) Close() error {
 		return fmt.Errorf("WAL close: %w", err)
 	}
 
-	// TODO: Close backends
-	// TODO: Stop monitoring
+	// Close backends
+	if s.backend != nil {
+		if err := s.backend.Close(); err != nil {
+			return fmt.Errorf("backend close: %w", err)
+		}
+	}
+
+	// Stop monitoring - simplified for now
+	// if s.monitoring != nil {
+	//     s.monitoring.Stop()
+	// }
 
 	return nil
 }
@@ -144,8 +196,29 @@ func (s *Sink) VerifyIntegrity() (*IntegrityReport, error) {
 	}
 	report.WALIntegrity = walReport
 
-	// TODO: Verify compliance chain if enabled
-	// TODO: Verify backend consistency
+	// Verify compliance chain if enabled
+	if s.compliance != nil {
+		complReport, err := s.compliance.VerifyChain()
+		if err != nil {
+			return nil, fmt.Errorf("compliance verification failed: %w", err)
+		}
+		report.ComplianceIntegrity = complReport
+		if !complReport.Valid {
+			report.Valid = false
+		}
+	}
+
+	// Verify backend consistency
+	if s.backend != nil {
+		backendReport, err := s.backend.VerifyIntegrity()
+		if err != nil {
+			return nil, fmt.Errorf("backend verification failed: %w", err)
+		}
+		report.BackendReports = append(report.BackendReports, backendReport)
+		if !backendReport.Valid {
+			report.Valid = false
+		}
+	}
 
 	report.Valid = walReport.Valid
 	report.TotalRecords = walReport.TotalRecords
@@ -162,12 +235,20 @@ func (s *Sink) WALPath() string {
 // Private methods
 
 func (s *Sink) writeToWAL(event *core.LogEvent) error {
-	// TODO: Add resilience wrapper when implemented
+	// Add resilience wrapper if configured - simplified for now
+	// if s.resilience != nil {
+	//     return s.resilience.Execute(func() error {
+	//         return s.wal.Write(event)
+	//     })
+	// }
 	return s.wal.Write(event)
 }
 
 func (s *Sink) handleCriticalFailure(event *core.LogEvent, err error) {
-	// TODO: Record in monitor when implemented
+	// Record in monitor - simplified for now
+	// if s.monitoring != nil {
+	//     s.monitoring.RecordCriticalFailure(err)
+	// }
 	
 	if s.config.FailureHandler != nil {
 		s.config.FailureHandler(event, err)
@@ -176,12 +257,24 @@ func (s *Sink) handleCriticalFailure(event *core.LogEvent, err error) {
 	if s.config.PanicOnFailure {
 		panic(fmt.Sprintf("AUDIT SINK CRITICAL FAILURE: %v", err))
 	}
+	
+	// Last resort: log to stderr
+	fmt.Fprintf(os.Stderr, "CRITICAL: Failed to write audit event: %v\n", err)
+}
+
+// replicateToBackend replicates events to configured backends
+func (s *Sink) replicateToBackend(event *core.LogEvent) {
+	// Simplified - just write directly
+	if err := s.backend.Write(event); err != nil {
+		// Log error but don't fail - this is async replication
+		fmt.Fprintf(os.Stderr, "Backend replication error: %v\n", err)
+	}
 }
 
 func (s *Sink) cleanup() {
 	if s.wal != nil {
 		s.wal.Close()
 	}
-	// TODO: Close backends when implemented
-	// TODO: Stop monitor when implemented
+	// Close backends when implemented
+	// Stop monitor when implemented
 }

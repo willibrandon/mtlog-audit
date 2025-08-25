@@ -84,6 +84,14 @@ func WithPanicOnFailure() Option {
 	}
 }
 
+// WithWALSyncMode sets the WAL sync mode.
+func WithWALSyncMode(mode wal.SyncMode) Option {
+	return func(c *Config) error {
+		c.WALOptions = append(c.WALOptions, wal.WithSyncMode(mode))
+		return nil
+	}
+}
+
 // WithGroupCommit enables group commit for better throughput.
 func WithGroupCommit(size int, delay time.Duration) Option {
 	return func(c *Config) error {
