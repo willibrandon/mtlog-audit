@@ -286,3 +286,18 @@ func (s *Sink) cleanup() {
 	// Close backends when implemented
 	// Stop monitor when implemented
 }
+
+// Replay reads events from the WAL within a time range
+func (s *Sink) Replay(start, end time.Time) ([]*core.LogEvent, error) {
+	reader, err := wal.NewReader(s.config.WALPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create reader: %w", err)
+	}
+	defer reader.Close()
+
+	if start.IsZero() && end.IsZero() {
+		return reader.ReadAll()
+	}
+
+	return reader.ReadRange(start, end)
+}

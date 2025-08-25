@@ -1,11 +1,17 @@
 package commands
 
 import (
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 	audit "github.com/willibrandon/mtlog-audit"
+	"github.com/willibrandon/mtlog-audit/wal"
+	"github.com/willibrandon/mtlog/core"
 )
 
 func replayCmd() *cobra.Command {
@@ -102,18 +108,19 @@ func runReplay(walPath, startTimeStr, endTimeStr, format, output string) error {
 	}
 	fmt.Println()
 
-	// Create audit sink to access WAL
-	sink, err := audit.New(
+	// First, just verify integrity without creating a full sink
+	// We'll read directly from the WAL file for replay
+	fmt.Printf("🔍 Verifying WAL integrity...")
+	
+	// Create a temporary sink just for verification
+	verifySink, err := audit.New(
 		audit.WithWAL(walPath),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to open WAL: %w", err)
 	}
-	defer sink.Close()
-
-	// Verify WAL integrity first
-	fmt.Printf("🔍 Verifying WAL integrity...")
-	report, err := sink.VerifyIntegrity()
+	
+	report, err := verifySink.VerifyIntegrity()
 	if err != nil {
 		fmt.Printf(" ❌\n")
 		return fmt.Errorf("WAL integrity verification failed: %w", err)
@@ -138,18 +145,155 @@ func runReplay(walPath, startTimeStr, endTimeStr, format, output string) error {
 
 	fmt.Println()
 
-	// TODO: Implement actual event reading and replay
-	// This would require implementing WAL reading functionality
-	fmt.Printf("📊 Found %d events to replay\n", report.TotalRecords)
+	// Close the verification sink before reading
+	verifySink.Close()
+
+	// Now read events directly from the WAL file
+	reader, err := wal.NewReader(walPath)
+	if err != nil {
+		return fmt.Errorf("failed to create reader: %w", err)
+	}
+	defer reader.Close()
+
+	var events []*core.LogEvent
+	if startTime.IsZero() && endTime.IsZero() {
+		events, err = reader.ReadAll()
+	} else {
+		events, err = reader.ReadRange(startTime, endTime)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read events: %w", err)
+	}
+
+	fmt.Printf("📊 Found %d events to replay\n", len(events))
 	fmt.Println()
-	fmt.Println("⚠️  Note: Event replay functionality is not yet implemented.")
-	fmt.Println("This command currently only verifies WAL integrity and reports basic statistics.")
-	fmt.Println()
-	fmt.Println("To implement full replay functionality, add:")
-	fmt.Println("1. WAL record reading and parsing")
-	fmt.Println("2. Time range filtering")
-	fmt.Println("3. Output formatting (JSON, CSV, text)")
-	fmt.Println("4. Event deserialization")
+
+	// Output events based on format
+	switch format {
+	case "json":
+		if err := outputJSON(events, output); err != nil {
+			return fmt.Errorf("failed to output JSON: %w", err)
+		}
+	case "csv":
+		if err := outputCSV(events, output); err != nil {
+			return fmt.Errorf("failed to output CSV: %w", err)
+		}
+	case "text":
+		if err := outputText(events, output); err != nil {
+			return fmt.Errorf("failed to output text: %w", err)
+		}
+	}
+
+	fmt.Printf("✅ Successfully replayed %d events\n", len(events))
+	return nil
+}
+
+func outputJSON(events []*core.LogEvent, outputFile string) error {
+	var writer io.Writer = os.Stdout
+
+	if outputFile != "" {
+		file, err := os.Create(outputFile)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		writer = file
+	}
+
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+
+	for _, event := range events {
+		if err := encoder.Encode(event); err != nil {
+			return err
+		}
+	}
 
 	return nil
+}
+
+func outputText(events []*core.LogEvent, outputFile string) error {
+	var writer io.Writer = os.Stdout
+
+	if outputFile != "" {
+		file, err := os.Create(outputFile)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		writer = file
+	}
+
+	for _, event := range events {
+		levelStr := formatLevel(event.Level)
+		fmt.Fprintf(writer, "[%s] [%s] %s\n",
+			event.Timestamp.Format(time.RFC3339),
+			levelStr,
+			event.MessageTemplate)
+
+		if len(event.Properties) > 0 {
+			for k, v := range event.Properties {
+				fmt.Fprintf(writer, "  %s: %v\n", k, v)
+			}
+		}
+		fmt.Fprintln(writer)
+	}
+
+	return nil
+}
+
+func outputCSV(events []*core.LogEvent, outputFile string) error {
+	var writer io.Writer = os.Stdout
+
+	if outputFile != "" {
+		file, err := os.Create(outputFile)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		writer = file
+	}
+
+	csvWriter := csv.NewWriter(writer)
+	defer csvWriter.Flush()
+
+	// Write header
+	if err := csvWriter.Write([]string{"Timestamp", "Level", "Message", "Properties"}); err != nil {
+		return err
+	}
+
+	for _, event := range events {
+		props, _ := json.Marshal(event.Properties)
+		levelStr := formatLevel(event.Level)
+		record := []string{
+			event.Timestamp.Format(time.RFC3339),
+			levelStr,
+			event.MessageTemplate,
+			string(props),
+		}
+		if err := csvWriter.Write(record); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func formatLevel(level core.LogEventLevel) string {
+	switch level {
+	case core.VerboseLevel:
+		return "VRB"
+	case core.DebugLevel:
+		return "DBG"
+	case core.InformationLevel:
+		return "INF"
+	case core.WarningLevel:
+		return "WRN"
+	case core.ErrorLevel:
+		return "ERR"
+	case core.FatalLevel:
+		return "FTL"
+	default:
+		return fmt.Sprintf("L%d", level)
+	}
 }
