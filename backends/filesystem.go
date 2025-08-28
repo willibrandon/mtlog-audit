@@ -429,17 +429,35 @@ func (fb *FilesystemBackend) findFiles(start, end time.Time) ([]string, error) {
 		return nil, err
 	}
 	
-	// Filter files by modification time (simple approach)
-	// In production, parse timestamps from filenames
+	// Parse timestamps from filenames (audit-YYYYMMDD-HHMMSS.json format)
 	var relevant []string
 	for _, file := range files {
-		stat, err := os.Stat(file)
-		if err != nil {
+		// Extract timestamp from filename
+		base := filepath.Base(file)
+		// Remove "audit-" prefix and any extension
+		if len(base) < 22 { // "audit-YYYYMMDD-HHMMSS" is 22 chars
 			continue
 		}
 		
-		// Check if file might contain relevant data
-		if stat.ModTime().After(start) || stat.ModTime().Equal(start) {
+		// Extract timestamp portion
+		timestampStr := base[6:21] // Skip "audit-" and get next 15 chars
+		
+		// Parse timestamp (YYYYMMDD-HHMMSS format)
+		fileTime, err := time.Parse("20060102-150405", timestampStr)
+		if err != nil {
+			// Fall back to modification time if parsing fails
+			stat, err := os.Stat(file)
+			if err != nil {
+				continue
+			}
+			fileTime = stat.ModTime()
+		}
+		
+		// Check if file is within the time range
+		// Files are created when they start, so we check if the file start time
+		// is before the end of our range, and add files that might contain relevant events
+		if fileTime.Before(end) || fileTime.Equal(end) {
+			// File might contain events in our range
 			relevant = append(relevant, file)
 		}
 	}

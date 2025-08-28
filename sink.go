@@ -140,8 +140,13 @@ func (s *Sink) Emit(event *core.LogEvent) {
 	s.mu.RLock()
 	if s.closed {
 		s.mu.RUnlock()
-		// In production, we might panic here or use a failure handler
-		// For now, we'll just return silently per the interface
+		// Handle writes to closed sink based on configuration
+		if s.config.PanicOnFailure {
+			panic("attempted to write to closed audit sink")
+		}
+		if s.config.FailureHandler != nil {
+			s.config.FailureHandler(event, ErrSinkClosed)
+		}
 		return
 	}
 	s.mu.RUnlock()

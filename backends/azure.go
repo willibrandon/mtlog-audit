@@ -3,24 +3,31 @@ package backends
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
+	"crypto/md5"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/willibrandon/mtlog/core"
 )
 
 // AzureBackend implements the Backend interface for Azure Blob Storage
 type AzureBackend struct {
-	config      AzureConfig
-	mu          sync.Mutex
-	buffer      []*core.LogEvent
-	lastFlush   time.Time
-	batchSize   int
-	flushTicker *time.Ticker
-	stopChan    chan struct{}
-	wg          sync.WaitGroup
+	config         AzureConfig
+	containerURL   azblob.ContainerURL
+	mu             sync.Mutex
+	buffer         []*core.LogEvent
+	lastFlush      time.Time
+	batchSize      int
+	flushTicker    *time.Ticker
+	stopChan       chan struct{}
+	wg             sync.WaitGroup
+	uploadedBlobs  map[string]string // blob name -> MD5 hash for verification
 }
 
 // NewAzureBackend creates a new Azure backend
@@ -32,12 +39,45 @@ func NewAzureBackend(cfg AzureConfig) (*AzureBackend, error) {
 		return nil, fmt.Errorf("Azure container name is required")
 	}
 
+	// Parse connection string to extract account name and key
+	accountName, accountKey, err := parseConnectionString(cfg.ConnectionString)
+	if err != nil {
+		return nil, fmt.Errorf("invalid connection string: %w", err)
+	}
+	
+	// Create shared key credential
+	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create credential: %w", err)
+	}
+
+	// Create pipeline
+	pipeline := azblob.NewPipeline(credential, azblob.PipelineOptions{})
+	
+	// Create container URL
+	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", accountName, cfg.Container))
+	containerURL := azblob.NewContainerURL(*u, pipeline)
+
 	ab := &AzureBackend{
-		config:    cfg,
-		buffer:    make([]*core.LogEvent, 0, 1000),
-		lastFlush: time.Now(),
-		batchSize: 100,
-		stopChan:  make(chan struct{}),
+		config:        cfg,
+		containerURL:  containerURL,
+		buffer:        make([]*core.LogEvent, 0, 1000),
+		lastFlush:     time.Now(),
+		batchSize:     100,
+		stopChan:      make(chan struct{}),
+		uploadedBlobs: make(map[string]string),
+	}
+
+	// Verify container exists
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = containerURL.GetProperties(ctx, azblob.LeaseAccessConditions{})
+	if err != nil {
+		// Try to create container if it doesn't exist
+		_, createErr := containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
+		if createErr != nil && !isAlreadyExistsError(createErr) {
+			return nil, fmt.Errorf("container verification failed: %w", err)
+		}
 	}
 
 	// Start background flush worker
@@ -46,6 +86,34 @@ func NewAzureBackend(cfg AzureConfig) (*AzureBackend, error) {
 	go ab.flushWorker()
 
 	return ab, nil
+}
+
+// parseConnectionString extracts account name and key from connection string
+func parseConnectionString(connStr string) (accountName, accountKey string, err error) {
+	parts := bytes.Split([]byte(connStr), []byte(";"))
+	for _, part := range parts {
+		if bytes.HasPrefix(part, []byte("AccountName=")) {
+			accountName = string(bytes.TrimPrefix(part, []byte("AccountName=")))
+		} else if bytes.HasPrefix(part, []byte("AccountKey=")) {
+			accountKey = string(bytes.TrimPrefix(part, []byte("AccountKey=")))
+		}
+	}
+	
+	if accountName == "" || accountKey == "" {
+		return "", "", fmt.Errorf("connection string must contain AccountName and AccountKey")
+	}
+	
+	return accountName, accountKey, nil
+}
+
+// isAlreadyExistsError checks if error is because container already exists
+func isAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Azure returns 409 Conflict when container already exists
+	return bytes.Contains([]byte(err.Error()), []byte("409")) || 
+		   bytes.Contains([]byte(err.Error()), []byte("already exists"))
 }
 
 // Write writes an event to Azure
@@ -86,13 +154,57 @@ func (ab *AzureBackend) Read(start, end time.Time) ([]*core.LogEvent, error) {
 
 // VerifyIntegrity verifies the integrity of stored data
 func (ab *AzureBackend) VerifyIntegrity() (*IntegrityReport, error) {
-	// For now, just report success if backend is accessible
-	// In production, would verify blob signatures and checksums
-	return &IntegrityReport{
+	report := &IntegrityReport{
 		Valid:        true,
 		TotalRecords: 0,
-		Errors:       nil,
-	}, nil
+		Errors:       make([]string, 0),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// List all blobs and verify their MD5 hashes
+	for marker := (azblob.Marker{}); marker.NotDone(); {
+		listBlob, err := ab.containerURL.ListBlobsFlatSegment(ctx, marker, azblob.ListBlobsSegmentOptions{
+			Prefix: ab.config.Prefix,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list blobs: %w", err)
+		}
+
+		marker = listBlob.NextMarker
+
+		for _, blobItem := range listBlob.Segment.BlobItems {
+			report.TotalRecords++
+			
+			// Get blob properties to check MD5
+			blobURL := ab.containerURL.NewBlockBlobURL(blobItem.Name)
+			props, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
+			if err != nil {
+				report.Errors = append(report.Errors, fmt.Sprintf("Failed to get properties for %s: %v", blobItem.Name, err))
+				report.Valid = false
+				continue
+			}
+
+			// Verify MD5 if we have it recorded
+			if storedHash, exists := ab.uploadedBlobs[blobItem.Name]; exists {
+				blobMD5 := base64.StdEncoding.EncodeToString(props.ContentMD5())
+				if blobMD5 != storedHash {
+					report.Errors = append(report.Errors, fmt.Sprintf("MD5 mismatch for %s: expected %s, got %s", 
+						blobItem.Name, storedHash, blobMD5))
+					report.Valid = false
+				}
+			}
+
+			// Check if blob is in immutable state if configured
+			if ab.config.Immutable && props.BlobCommittedBlockCount() == 0 {
+				report.Errors = append(report.Errors, fmt.Sprintf("Blob %s is not in committed state", blobItem.Name))
+				report.Valid = false
+			}
+		}
+	}
+
+	return report, nil
 }
 
 // Close closes the Azure backend
@@ -135,9 +247,11 @@ func (ab *AzureBackend) flushLocked() error {
 		return nil
 	}
 
-	// In production, this would upload to Azure Blob Storage
-	// For now, we simulate the upload
+	// Generate blob name with prefix if configured
 	blobName := fmt.Sprintf("audit-%d.json.gz", time.Now().UnixNano())
+	if ab.config.Prefix != "" {
+		blobName = fmt.Sprintf("%s/%s", ab.config.Prefix, blobName)
+	}
 	
 	// Compress the data
 	var buf bytes.Buffer
@@ -154,10 +268,77 @@ func (ab *AzureBackend) flushLocked() error {
 		return fmt.Errorf("failed to compress data: %w", err)
 	}
 
-	// Simulate upload to Azure
-	// In production: upload buf.Bytes() to Azure Blob Storage
-	_ = blobName
-	_ = buf.Bytes()
+	// Calculate MD5 hash for integrity verification
+	data := buf.Bytes()
+	md5Hash := md5.Sum(data)
+	md5String := base64.StdEncoding.EncodeToString(md5Hash[:])
+
+	// Upload to Azure Blob Storage
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	blobURL := ab.containerURL.NewBlockBlobURL(blobName)
+	
+	// Set blob options
+	options := azblob.UploadToBlockBlobOptions{
+		BlobHTTPHeaders: azblob.BlobHTTPHeaders{
+			ContentType:     "application/gzip",
+			ContentMD5:      md5Hash[:],
+			ContentEncoding: "gzip",
+		},
+		Metadata: azblob.Metadata{
+			"audit":     "true",
+			"timestamp": fmt.Sprintf("%d", time.Now().Unix()),
+			"events":    fmt.Sprintf("%d", len(ab.buffer)),
+		},
+	}
+
+	// Note: Access tier is set separately after upload if needed
+
+	// Upload the blob
+	_, err := azblob.UploadBufferToBlockBlob(ctx, data, blobURL, options)
+	if err != nil {
+		return fmt.Errorf("failed to upload blob: %w", err)
+	}
+
+	// Store MD5 for later verification
+	ab.uploadedBlobs[blobName] = md5String
+
+	// Set access tier if configured (after upload)
+	if ab.config.AccessTier != "" {
+		var tier azblob.AccessTierType
+		switch ab.config.AccessTier {
+		case "hot":
+			tier = azblob.AccessTierHot
+		case "cool":
+			tier = azblob.AccessTierCool
+		case "archive":
+			tier = azblob.AccessTierArchive
+		default:
+			tier = azblob.AccessTierHot
+		}
+		
+		_, err = blobURL.SetTier(ctx, tier, azblob.LeaseAccessConditions{}, azblob.RehydratePriorityNone)
+		if err != nil {
+			// Log but don't fail - tier setting might require special permissions
+			fmt.Printf("Warning: Failed to set access tier: %v\n", err)
+		}
+	}
+
+	// Note: Immutability policies require specific Azure configuration
+	// and are typically set at the container level, not per blob
+	if ab.config.Immutable && ab.config.RetentionDays > 0 {
+		// Set metadata to indicate retention requirement
+		metadata := azblob.Metadata{
+			"retention-days": fmt.Sprintf("%d", ab.config.RetentionDays),
+			"immutable":      "true",
+		}
+		_, err = blobURL.SetMetadata(ctx, metadata, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
+		if err != nil {
+			// Log but don't fail
+			fmt.Printf("Warning: Failed to set retention metadata: %v\n", err)
+		}
+	}
 
 	// Clear buffer
 	ab.buffer = ab.buffer[:0]

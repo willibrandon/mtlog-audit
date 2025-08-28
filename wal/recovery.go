@@ -3,13 +3,16 @@ package wal
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
+	"time"
 
 	"github.com/willibrandon/mtlog-audit/internal/logger"
+	"github.com/willibrandon/mtlog/core"
 )
 
 // RecoveryEngine handles WAL recovery after corruption or crashes.
@@ -413,8 +416,15 @@ func (r *RecoveryEngine) RepairWAL(outputPath string) error {
 	// Write recovered records to new WAL
 	var lastHash [32]byte
 	for i, recordData := range records {
-		// For repair, we write the raw event data back
-		// In production, you'd properly reconstruct the records
+		// Deserialize the event to get its original timestamp
+		var event core.LogEvent
+		timestamp := time.Now().UnixNano() // Default to now if deserialization fails
+		
+		if err := json.Unmarshal(recordData, &event); err == nil && event.Timestamp.Unix() > 0 {
+			timestamp = event.Timestamp.UnixNano()
+		}
+		
+		// Properly reconstruct the record with correct metadata
 		record := &Record{
 			Magic:     MagicHeader,
 			Version:   Version,
@@ -423,7 +433,8 @@ func (r *RecoveryEngine) RepairWAL(outputPath string) error {
 			EventData: recordData,
 			MagicEnd:  MagicFooter,
 			Length:    uint32(len(recordData)),
-			Timestamp: 0, // Will be set in Marshal
+			Timestamp: timestamp,
+			Flags:     0, // Reset flags for repaired records
 		}
 		
 		// Marshal and write

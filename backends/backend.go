@@ -132,11 +132,14 @@ func (c AzureConfig) Validate() error {
 
 // GCSConfig configures a Google Cloud Storage backend
 type GCSConfig struct {
-	Bucket        string        `json:"bucket"`
-	ProjectID     string        `json:"project_id"`
-	Prefix        string        `json:"prefix"`
-	StorageClass  string        `json:"storage_class"`
-	RetentionDays int           `json:"retention_days"`
+	Bucket          string        `json:"bucket"`
+	ProjectID       string        `json:"project_id"`
+	Prefix          string        `json:"prefix"`
+	StorageClass    string        `json:"storage_class"`
+	RetentionDays   int           `json:"retention_days"`
+	Region          string        `json:"region"`
+	CredentialsFile string        `json:"credentials_file"`
+	Versioning      bool          `json:"versioning"`
 }
 
 func (c GCSConfig) Type() string {
