@@ -138,7 +138,7 @@ func (r *RecoveryEngine) Recover() (*RecoveryReport, [][]byte, error) {
 			}
 
 			report.Errors = append(report.Errors, fmt.Errorf("at offset %d: %w", offset, err))
-			
+
 			if !r.skipCorrupted {
 				return report, records, err
 			}
@@ -148,7 +148,7 @@ func (r *RecoveryEngine) Recover() (*RecoveryReport, [][]byte, error) {
 			if skipBytes == 0 {
 				break // No more valid records found
 			}
-			
+
 			report.SkippedBytes += skipBytes
 			report.CorruptedRecords++
 			offset += skipBytes
@@ -189,7 +189,7 @@ func (r *RecoveryEngine) readNextRecord(file *os.File, offset int64) (*Recovered
 
 	// Parse header fields
 	buf := bytes.NewReader(header)
-	
+
 	// 1. Magic (4 bytes)
 	var magic uint32
 	if err := binary.Read(buf, binary.LittleEndian, &magic); err != nil {
@@ -298,7 +298,7 @@ func (r *RecoveryEngine) readNextRecord(file *os.File, offset int64) (*Recovered
 		fullRecord := make([]byte, 0, len(header)+len(remaining)-8)
 		fullRecord = append(fullRecord, header...)
 		fullRecord = append(fullRecord, remaining[:len(remaining)-8]...) // Exclude CRC32Data and MagicEnd
-		
+
 		expectedDataCRC := crc32.ChecksumIEEE(fullRecord)
 		if crc32Data != expectedDataCRC {
 			return nil, fmt.Errorf("data CRC mismatch: expected %x, got %x", expectedDataCRC, crc32Data)
@@ -319,46 +319,46 @@ func (r *RecoveryEngine) readNextRecord(file *os.File, offset int64) (*Recovered
 func (r *RecoveryEngine) findNextRecord(file *os.File, startOffset int64) int64 {
 	const scanWindow = 4096 // Scan in 4KB chunks
 	buffer := make([]byte, scanWindow)
-	
+
 	// Get file size to avoid infinite loop
 	stat, err := file.Stat()
 	if err != nil {
 		return 0
 	}
 	fileSize := stat.Size()
-	
+
 	offset := startOffset + 1 // Start from next byte
-	
+
 	for offset < fileSize {
 		if _, err := file.Seek(offset, 0); err != nil {
 			return 0
 		}
-		
+
 		n, err := file.Read(buffer)
 		if err != nil || n == 0 {
 			return 0
 		}
-		
+
 		// Look for magic header
 		for i := 0; i <= n-4 && offset+int64(i) < fileSize; i++ {
 			if binary.LittleEndian.Uint32(buffer[i:i+4]) == MagicHeader {
 				// Found potential record start
 				foundOffset := offset + int64(i)
-				
+
 				// Verify it's actually a valid record
 				if _, err := r.readNextRecord(file, foundOffset); err == nil {
 					return foundOffset - startOffset
 				}
 			}
 		}
-		
+
 		// Move forward, overlapping by 4 bytes to catch boundaries
 		if n < scanWindow {
 			break // Reached end of file
 		}
 		offset += int64(n) - 4
 	}
-	
+
 	return 0 // No valid record found
 }
 
@@ -368,18 +368,18 @@ func (r *RecoveryEngine) RecoverSegments(segments []*Segment) (*RecoveryReport, 
 		Errors:            make([]error, 0),
 		RecoveredSegments: make([]string, 0),
 	}
-	
+
 	var allRecords [][]byte
-	
+
 	for _, segment := range segments {
 		logger.Log.Info("Recovering segment {path}", segment.Path)
-		
-		engine := NewRecoveryEngine(segment.Path, 
+
+		engine := NewRecoveryEngine(segment.Path,
 			WithSkipCorrupted(r.skipCorrupted),
 			WithChecksumVerification(r.verifyChecksum),
 			WithMaxRecordSize(r.maxRecordSize),
 		)
-		
+
 		segReport, records, err := engine.Recover()
 		if err != nil {
 			report.Errors = append(report.Errors, fmt.Errorf("segment %s: %w", segment.Path, err))
@@ -388,25 +388,25 @@ func (r *RecoveryEngine) RecoverSegments(segments []*Segment) (*RecoveryReport, 
 			}
 			continue
 		}
-		
+
 		// Merge results
 		report.TotalRecords += segReport.TotalRecords
 		report.RecoveredRecords += segReport.RecoveredRecords
 		report.CorruptedRecords += segReport.CorruptedRecords
 		report.SkippedBytes += segReport.SkippedBytes
-		
+
 		if segReport.LastGoodSequence > report.LastGoodSequence {
 			report.LastGoodSequence = segReport.LastGoodSequence
 		}
-		
+
 		if segReport.RecoveredRecords > 0 {
 			report.RecoveredSegments = append(report.RecoveredSegments, segment.Path)
 			allRecords = append(allRecords, records...)
 		}
-		
+
 		report.Errors = append(report.Errors, segReport.Errors...)
 	}
-	
+
 	return report, allRecords, nil
 }
 
@@ -414,37 +414,37 @@ func (r *RecoveryEngine) RecoverSegments(segments []*Segment) (*RecoveryReport, 
 // and writing them to a new file.
 func (r *RecoveryEngine) RepairWAL(outputPath string) error {
 	logger.Log.Info("Starting WAL repair from {source} to {dest}", r.path, outputPath)
-	
+
 	// Recover all valid records
 	report, records, err := r.Recover()
 	if err != nil && !r.skipCorrupted {
 		return fmt.Errorf("recovery failed: %w", err)
 	}
-	
+
 	if report.RecoveredRecords == 0 {
 		return errors.New("no records could be recovered")
 	}
-	
+
 	logger.Log.Info("Recovered {count} records, writing to new WAL", report.RecoveredRecords)
-	
+
 	// Create new WAL file
 	output, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_SYNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create output WAL: %w", err)
 	}
 	defer output.Close()
-	
+
 	// Write recovered records to new WAL
 	var lastHash [32]byte
 	for i, recordData := range records {
 		// Deserialize the event to get its original timestamp
 		var event core.LogEvent
 		timestamp := time.Now().UnixNano() // Default to now if deserialization fails
-		
+
 		if err := json.Unmarshal(recordData, &event); err == nil && event.Timestamp.Unix() > 0 {
 			timestamp = event.Timestamp.UnixNano()
 		}
-		
+
 		// Properly reconstruct the record with correct metadata
 		record := &Record{
 			Magic:     MagicHeader,
@@ -457,23 +457,23 @@ func (r *RecoveryEngine) RepairWAL(outputPath string) error {
 			Timestamp: timestamp,
 			Flags:     0, // Reset flags for repaired records
 		}
-		
+
 		// Marshal and write
 		data, err := record.Marshal()
 		if err != nil {
 			return fmt.Errorf("failed to marshal record %d: %w", i, err)
 		}
-		
+
 		if _, err := output.Write(data); err != nil {
 			return fmt.Errorf("failed to write record %d: %w", i, err)
 		}
-		
+
 		lastHash = record.ComputeHash()
 	}
-	
-	logger.Log.Info("WAL repair complete: {recovered} records written to {path}", 
+
+	logger.Log.Info("WAL repair complete: {recovered} records written to {path}",
 		report.RecoveredRecords, outputPath)
-	
+
 	return nil
 }
 
@@ -483,43 +483,43 @@ func (r *RecoveryEngine) ForensicRecover() (*RecoveryReport, [][]byte, error) {
 		Errors:          make([]error, 0),
 		RecoveryMethods: make([]string, 0),
 	}
-	
+
 	// First try standard recovery
 	standardReport, records, err := r.Recover()
 	if err != nil && !r.skipCorrupted {
 		return report, nil, err
 	}
-	
+
 	// Merge standard report
 	*report = *standardReport
-	
+
 	if !r.enableForensic {
 		return report, records, nil
 	}
-	
+
 	logger.Log.Info("Starting forensic recovery")
 	report.RecoveryMethods = append(report.RecoveryMethods, "forensic_recovery")
-	
+
 	// Build hash chain map
 	r.buildHashChainMap(records)
-	
+
 	// Attempt to recover broken chains
 	additionalRecords := r.reconstructHashChains(report)
 	records = append(records, additionalRecords...)
-	
+
 	// Try advanced recovery techniques
 	if partialRecords := r.recoverPartialRecords(); len(partialRecords) > 0 {
 		report.RecoveryMethods = append(report.RecoveryMethods, "partial_record_recovery")
 		report.PartialRecords += len(partialRecords)
 		records = append(records, partialRecords...)
 	}
-	
+
 	// Attempt shadow recovery
 	if shadowRecords := r.recoverFromShadow(); len(shadowRecords) > 0 {
 		report.RecoveryMethods = append(report.RecoveryMethods, "shadow_recovery")
 		records = append(records, shadowRecords...)
 	}
-	
+
 	return report, records, nil
 }
 
@@ -530,7 +530,7 @@ func (r *RecoveryEngine) buildHashChainMap(records [][]byte) {
 		if len(recordData) < 40 {
 			continue
 		}
-		
+
 		// Create a minimal record just for hash computation
 		record := &Record{
 			Sequence:  uint64(i + 1),
@@ -544,63 +544,60 @@ func (r *RecoveryEngine) buildHashChainMap(records [][]byte) {
 // reconstructHashChains attempts to reconstruct broken hash chains
 func (r *RecoveryEngine) reconstructHashChains(report *RecoveryReport) [][]byte {
 	var reconstructed [][]byte
-	
+
 	// Scan for hash chain breaks
 	file, err := os.Open(r.path)
 	if err != nil {
 		return reconstructed
 	}
 	defer file.Close()
-	
+
 	offset := int64(0)
 	stat, _ := file.Stat()
 	fileSize := stat.Size()
-	
-	var prevHash [32]byte
+
 	var lastGoodHash [32]byte
 	chainBroken := false
-	
+
 	for offset < fileSize {
 		// Try to read a record
-		record, err := r.readRecordWithHashRecovery(file, offset, prevHash, lastGoodHash)
+		record, err := r.readRecordWithHashRecovery(file, offset, lastGoodHash)
 		if err != nil {
 			if !chainBroken {
 				report.HashChainBreaks++
 				chainBroken = true
 			}
-			
+
 			// Skip and continue
 			offset++
 			continue
 		}
-		
+
 		if record != nil {
 			if chainBroken {
 				report.ReconstructedChains++
 				chainBroken = false
 			}
-			
+
 			reconstructed = append(reconstructed, record.EventData)
 			lastGoodHash = sha256.Sum256(record.EventData)
 			offset += int64(record.BytesRead)
 		} else {
 			offset++
 		}
-		
-		prevHash = lastGoodHash
 	}
-	
+
 	return reconstructed
 }
 
 // readRecordWithHashRecovery attempts to read a record with hash chain recovery
-func (r *RecoveryEngine) readRecordWithHashRecovery(file *os.File, offset int64, prevHash, lastGoodHash [32]byte) (*RecoveredRecord, error) {
+func (r *RecoveryEngine) readRecordWithHashRecovery(file *os.File, offset int64, lastGoodHash [32]byte) (*RecoveredRecord, error) {
 	// First try normal read
 	record, err := r.readNextRecord(file, offset)
 	if err == nil {
 		return record, nil
 	}
-	
+
 	// If hash chain is broken, try to reconstruct
 	if r.enableForensic {
 		// Try using last good hash
@@ -608,7 +605,7 @@ func (r *RecoveryEngine) readRecordWithHashRecovery(file *os.File, offset int64,
 			return record, nil
 		}
 	}
-	
+
 	return nil, err
 }
 
@@ -618,14 +615,14 @@ func (r *RecoveryEngine) attemptHashReconstruction(file *os.File, offset int64, 
 	if err != nil {
 		return nil
 	}
-	
+
 	// Read a larger buffer for comprehensive analysis
 	buffer := make([]byte, min(int(r.maxRecordSize), 64*1024))
 	n, err := file.Read(buffer)
 	if err != nil || n < 100 {
 		return nil
 	}
-	
+
 	// Strategy 1: Find records with matching hash chains
 	for i := 0; i < n-100; i++ {
 		if binary.LittleEndian.Uint32(buffer[i:]) == MagicHeader {
@@ -633,88 +630,88 @@ func (r *RecoveryEngine) attemptHashReconstruction(file *os.File, offset int64, 
 			if i+72 > n {
 				continue
 			}
-			
+
 			// Extract header fields
 			version := binary.LittleEndian.Uint16(buffer[i+4:])
 			flags := binary.LittleEndian.Uint16(buffer[i+6:])
 			length := binary.LittleEndian.Uint32(buffer[i+8:])
 			timestamp := binary.LittleEndian.Uint64(buffer[i+12:])
 			headerCRC := binary.LittleEndian.Uint32(buffer[i+20:])
-			
+
 			// Validate header structure
 			if version != Version || length > uint32(r.maxRecordSize) {
 				continue
 			}
-			
+
 			// Calculate expected record size
 			recordSize := 24 + 8 + 32 + int(length) + 4 + 4
 			if i+recordSize > n {
 				continue
 			}
-			
+
 			// Extract the full potential record
 			potentialRecord := buffer[i : i+recordSize]
-			
+
 			// Try to validate hash chain
 			if len(potentialRecord) > 32 {
 				// Extract previous hash from record
 				var prevHash [32]byte
 				copy(prevHash[:], potentialRecord[32:64])
-				
+
 				// Check if this record chains from our last good hash
 				if prevHash == lastGoodHash {
 					// Perfect match! This record continues our chain
-					return r.reconstructRecord(potentialRecord, i, true)
+					return r.reconstructRecord(potentialRecord, true)
 				}
-				
+
 				// Check if this record could be part of a fork
 				if r.isValidHashChainFork(prevHash, lastGoodHash) {
 					// This could be a valid fork in the chain
-					return r.reconstructRecord(potentialRecord, i, false)
+					return r.reconstructRecord(potentialRecord, false)
 				}
 			}
-			
+
 			// Strategy 2: CRC-based reconstruction
 			if r.attemptCRCReconstruction(potentialRecord, headerCRC) {
-				return r.reconstructRecord(potentialRecord, i, false)
+				return r.reconstructRecord(potentialRecord, false)
 			}
-			
+
 			// Strategy 3: Pattern-based reconstruction
 			if r.attemptPatternReconstruction(potentialRecord, timestamp, flags) {
-				return r.reconstructRecord(potentialRecord, i, false)
+				return r.reconstructRecord(potentialRecord, false)
 			}
 		}
 	}
-	
+
 	// Strategy 4: Deep forensic recovery - scan for valid JSON events
-	return r.attemptDeepForensicRecovery(buffer, n, lastGoodHash)
+	return r.attemptDeepForensicRecovery(buffer, n)
 }
 
 // reconstructRecord creates a RecoveredRecord from raw bytes
-func (r *RecoveryEngine) reconstructRecord(data []byte, offset int, chainValid bool) *RecoveredRecord {
+func (r *RecoveryEngine) reconstructRecord(data []byte, chainValid bool) *RecoveredRecord {
 	if len(data) < 72 {
 		return nil
 	}
-	
+
 	// Extract fields
 	length := binary.LittleEndian.Uint32(data[8:12])
 	timestamp := binary.LittleEndian.Uint64(data[12:20])
-	
+
 	// Extract sequence if possible
 	var sequence uint64
 	if len(data) > 32 {
 		sequence = binary.LittleEndian.Uint64(data[24:32])
 	}
-	
+
 	// Extract event data
 	eventDataStart := 24 + 8 + 32 // header + sequence + prevhash
 	eventDataEnd := eventDataStart + int(length)
 	if eventDataEnd > len(data) {
 		eventDataEnd = len(data)
 	}
-	
+
 	eventData := data[eventDataStart:eventDataEnd]
-	
+
 	return &RecoveredRecord{
 		EventData:      eventData,
 		Sequence:       sequence,
@@ -732,7 +729,7 @@ func (r *RecoveryEngine) isValidHashChainFork(prevHash, lastGoodHash [32]byte) b
 			return true
 		}
 	}
-	
+
 	// Check if the hashes are related (share common prefix - indicating possible fork)
 	commonPrefix := 0
 	for i := 0; i < 32; i++ {
@@ -742,7 +739,7 @@ func (r *RecoveryEngine) isValidHashChainFork(prevHash, lastGoodHash [32]byte) b
 			break
 		}
 	}
-	
+
 	// If hashes share significant prefix, could be a fork
 	return commonPrefix >= 8
 }
@@ -752,11 +749,11 @@ func (r *RecoveryEngine) attemptCRCReconstruction(data []byte, expectedHeaderCRC
 	if len(data) < 24 {
 		return false
 	}
-	
+
 	// Verify header CRC
 	headerBytes := data[:20]
 	actualCRC := crc32.ChecksumIEEE(headerBytes)
-	
+
 	if actualCRC != expectedHeaderCRC {
 		// Try to fix single-bit errors
 		for i := 0; i < 20; i++ {
@@ -765,7 +762,7 @@ func (r *RecoveryEngine) attemptCRCReconstruction(data []byte, expectedHeaderCRC
 				testData := make([]byte, 20)
 				copy(testData, headerBytes)
 				testData[i] ^= (1 << bit)
-				
+
 				if crc32.ChecksumIEEE(testData) == expectedHeaderCRC {
 					// Found the error! Fix it
 					copy(data[:20], testData)
@@ -775,7 +772,7 @@ func (r *RecoveryEngine) attemptCRCReconstruction(data []byte, expectedHeaderCRC
 		}
 		return false
 	}
-	
+
 	// Also check data CRC if available
 	if len(data) > 28 {
 		length := binary.LittleEndian.Uint32(data[8:12])
@@ -789,7 +786,7 @@ func (r *RecoveryEngine) attemptCRCReconstruction(data []byte, expectedHeaderCRC
 			}
 		}
 	}
-	
+
 	return true
 }
 
@@ -798,17 +795,17 @@ func (r *RecoveryEngine) attemptPatternReconstruction(data []byte, timestamp uin
 	// Check timestamp is reasonable (within last 10 years)
 	now := uint64(time.Now().UnixNano())
 	tenYearsAgo := now - uint64(10*365*24*time.Hour.Nanoseconds())
-	
+
 	if timestamp < tenYearsAgo || timestamp > now+uint64(24*time.Hour.Nanoseconds()) {
 		return false
 	}
-	
+
 	// Check flags are valid
 	validFlags := RecordFlagDeleted | RecordFlagCompacted
 	if flags & ^uint16(validFlags) != 0 {
 		return false
 	}
-	
+
 	// Check if event data looks like JSON
 	if len(data) > 72 {
 		length := binary.LittleEndian.Uint32(data[8:12])
@@ -819,9 +816,9 @@ func (r *RecoveryEngine) attemptPatternReconstruction(data []byte, timestamp uin
 				// Check for JSON structure
 				firstChar := eventData[0]
 				lastChar := eventData[len(eventData)-1]
-				isJSON := (firstChar == '{' && lastChar == '}') || 
-				         (firstChar == '[' && lastChar == ']')
-				
+				isJSON := (firstChar == '{' && lastChar == '}') ||
+					(firstChar == '[' && lastChar == ']')
+
 				if isJSON {
 					// Try to validate JSON
 					var test interface{}
@@ -832,19 +829,19 @@ func (r *RecoveryEngine) attemptPatternReconstruction(data []byte, timestamp uin
 			}
 		}
 	}
-	
+
 	return false
 }
 
 // attemptDeepForensicRecovery performs deep analysis to recover records
-func (r *RecoveryEngine) attemptDeepForensicRecovery(buffer []byte, n int, lastGoodHash [32]byte) *RecoveredRecord {
+func (r *RecoveryEngine) attemptDeepForensicRecovery(buffer []byte, n int) *RecoveredRecord {
 	// Scan for JSON patterns that might be event data
 	for i := 0; i < n-10; i++ {
 		if buffer[i] == '{' {
 			// Found potential JSON start
 			depth := 1
 			j := i + 1
-			
+
 			for j < n && depth > 0 {
 				switch buffer[j] {
 				case '{':
@@ -854,11 +851,11 @@ func (r *RecoveryEngine) attemptDeepForensicRecovery(buffer []byte, n int, lastG
 				}
 				j++
 			}
-			
+
 			if depth == 0 && j-i > 10 {
 				// Found complete JSON object
 				jsonData := buffer[i:j]
-				
+
 				// Validate it's a log event
 				var event core.LogEvent
 				if err := json.Unmarshal(jsonData, &event); err == nil {
@@ -875,56 +872,30 @@ func (r *RecoveryEngine) attemptDeepForensicRecovery(buffer []byte, n int, lastG
 			}
 		}
 	}
-	
-	return nil
-}
 
-// looksLikeRecord checks if data looks like a valid record
-func (r *RecoveryEngine) looksLikeRecord(data []byte) bool {
-	if len(data) < 24 {
-		return false
-	}
-	
-	// Check magic header
-	if binary.LittleEndian.Uint32(data) != MagicHeader {
-		return false
-	}
-	
-	// Check version is reasonable
-	version := binary.LittleEndian.Uint16(data[4:])
-	if version > 10 {
-		return false
-	}
-	
-	// Check length is reasonable
-	length := binary.LittleEndian.Uint32(data[8:])
-	if length > uint32(r.maxRecordSize) {
-		return false
-	}
-	
-	return true
+	return nil
 }
 
 // recoverPartialRecords attempts to recover partially written records
 func (r *RecoveryEngine) recoverPartialRecords() [][]byte {
 	var partialRecords [][]byte
-	
+
 	file, err := os.Open(r.path)
 	if err != nil {
 		return partialRecords
 	}
 	defer file.Close()
-	
+
 	// Read file in chunks and look for partial records at boundaries
 	stat, _ := file.Stat()
 	fileSize := stat.Size()
-	
+
 	// Check last 10KB for partial records
 	if fileSize > 10240 {
 		file.Seek(fileSize-10240, 0)
 		buffer := make([]byte, 10240)
 		n, _ := file.Read(buffer)
-		
+
 		// Scan for incomplete records
 		for i := 0; i < n-100; i++ {
 			if r.looksLikePartialRecord(buffer[i:n]) {
@@ -934,7 +905,7 @@ func (r *RecoveryEngine) recoverPartialRecords() [][]byte {
 			}
 		}
 	}
-	
+
 	return partialRecords
 }
 
@@ -944,11 +915,11 @@ func (r *RecoveryEngine) looksLikePartialRecord(data []byte) bool {
 	if len(data) < 24 {
 		return false
 	}
-	
+
 	// Has valid header but no footer
 	hasHeader := binary.LittleEndian.Uint32(data) == MagicHeader
 	hasFooter := false
-	
+
 	if len(data) > 28 {
 		// Check if there's a footer where expected
 		length := binary.LittleEndian.Uint32(data[8:])
@@ -957,7 +928,7 @@ func (r *RecoveryEngine) looksLikePartialRecord(data []byte) bool {
 			hasFooter = binary.LittleEndian.Uint32(data[expectedFooterPos:]) == MagicFooter
 		}
 	}
-	
+
 	return hasHeader && !hasFooter
 }
 
@@ -966,42 +937,42 @@ func (r *RecoveryEngine) extractPartialData(data []byte) []byte {
 	if len(data) < 72 {
 		return nil
 	}
-	
+
 	// Try to extract event data portion
 	length := binary.LittleEndian.Uint32(data[8:])
 	if length > 0 && length < uint32(len(data)-72) {
 		eventData := data[72 : 72+length]
-		
+
 		// Validate it looks like JSON
 		if len(eventData) > 0 && (eventData[0] == '{' || eventData[0] == '[') {
 			return eventData
 		}
 	}
-	
+
 	return nil
 }
 
 // recoverFromShadow attempts to recover from shadow copies
 func (r *RecoveryEngine) recoverFromShadow() [][]byte {
 	var shadowRecords [][]byte
-	
+
 	shadowPath := r.path + ".shadow"
 	if _, err := os.Stat(shadowPath); err != nil {
 		// No shadow file
 		return shadowRecords
 	}
-	
+
 	// Create recovery engine for shadow file
 	shadowEngine := NewRecoveryEngine(shadowPath,
 		WithSkipCorrupted(true),
 		WithChecksumVerification(false), // Shadow might have relaxed checksums
 	)
-	
+
 	_, records, err := shadowEngine.Recover()
 	if err == nil {
 		shadowRecords = records
 	}
-	
+
 	return shadowRecords
 }
 

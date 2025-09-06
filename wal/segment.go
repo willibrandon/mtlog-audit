@@ -33,7 +33,6 @@ type SegmentManager struct {
 	segments    []*Segment
 	activeIndex int
 	maxSize     int64
-	maxAge      time.Duration
 	maxSegments int
 }
 

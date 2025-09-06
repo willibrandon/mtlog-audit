@@ -40,7 +40,6 @@ type WAL struct {
 	
 	// Buffering for group commit
 	buffer      []byte
-	bufferMu    sync.Mutex
 	flushTicker *time.Ticker
 	flushStop   chan struct{}
 	
@@ -223,12 +222,13 @@ func (w *WAL) Write(event *core.LogEvent) error {
 	w.lastHash = record.ComputeHash()
 
 	// Sync based on mode
-	if w.syncMode == SyncImmediate {
+	switch w.syncMode {
+	case SyncImmediate:
 		// For immediate mode, sync after every write
 		if err := w.file.Sync(); err != nil {
 			return fmt.Errorf("sync failed: %w", err)
 		}
-	} else if w.syncMode == SyncBatch {
+	case SyncBatch:
 		// For batch mode, sync every 10 writes or on rotation
 		if w.sequence%10 == 0 {
 			if err := w.file.Sync(); err != nil {

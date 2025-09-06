@@ -220,13 +220,13 @@ func (r *Reader) ReadRange(start, end time.Time) ([]*core.LogEvent, error) {
 }
 
 // Seek seeks to a specific offset in the WAL
-func (r *Reader) Seek(offset int64) error {
-	_, err := r.file.Seek(offset, io.SeekStart)
+func (r *Reader) Seek(offset int64, whence int) (int64, error) {
+	newOffset, err := r.file.Seek(offset, whence)
 	if err != nil {
-		return fmt.Errorf("failed to seek: %w", err)
+		return 0, fmt.Errorf("failed to seek: %w", err)
 	}
-	r.offset = offset
-	return nil
+	r.offset = newOffset
+	return newOffset, nil
 }
 
 // Close closes the reader

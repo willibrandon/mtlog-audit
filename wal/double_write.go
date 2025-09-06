@@ -56,7 +56,6 @@ func (d *DoubleWriteBuffer) WriteToJournal(data []byte, position int64) error {
 		Position: position,
 		Length:   uint32(len(data)),
 		CRC32:    crc32.Checksum(data, d.crcTable),
-		Data:     data,
 	}
 
 	// Write entry header

@@ -1,6 +1,7 @@
 package wal
 
 import (
+	"io"
 	"path/filepath"
 	"testing"
 	"time"
@@ -251,7 +252,7 @@ func TestWALReaderSeek(t *testing.T) {
 	}
 
 	// Seek back to after first event
-	if err := reader.Seek(offset); err != nil {
+	if _, err := reader.Seek(offset, io.SeekStart); err != nil {
 		t.Fatalf("Failed to seek: %v", err)
 	}
 
