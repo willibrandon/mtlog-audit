@@ -30,6 +30,9 @@ func Execute(v string) error {
 		recoverCmd(),
 		replayCmd(),
 		monitorCmd(),
+		exportCmd(),
+		compactCmd(),
+		statsCmd(),
 	)
 	
 	return rootCmd.Execute()

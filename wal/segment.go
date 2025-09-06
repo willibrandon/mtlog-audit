@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -48,7 +47,7 @@ func NewSegmentManager(walPath string, maxSize int64) (*SegmentManager, error) {
 		baseDir:     dir,
 		baseName:    base,
 		maxSize:     maxSize,
-		maxSegments: 10, // Keep last 10 segments by default
+		maxSegments: 1000, // Keep last 1000 segments by default to handle fragmentation
 		segments:    make([]*Segment, 0),
 		activeIndex: -1,
 	}
@@ -56,6 +55,19 @@ func NewSegmentManager(walPath string, maxSize int64) (*SegmentManager, error) {
 	// Scan for existing segments
 	if err := sm.scanSegments(); err != nil {
 		return nil, fmt.Errorf("failed to scan segments: %w", err)
+	}
+	
+	// If no segments exist, create an initial segment
+	if len(sm.segments) == 0 {
+		initialPath := filepath.Join(sm.baseDir, sm.baseName+".wal")
+		segment := &Segment{
+			Path:      initialPath,
+			StartSeq:  1,
+			CreatedAt: time.Now(),
+			Sealed:    false,
+		}
+		sm.segments = append(sm.segments, segment)
+		sm.activeIndex = 0
 	}
 	
 	return sm, nil
@@ -136,8 +148,7 @@ func (sm *SegmentManager) scanSegments() error {
 			CreatedAt: stat.ModTime(),
 		}
 		
-		// Try to parse sequence numbers from filename
-		sm.parseSequenceFromName(segment)
+		// Don't parse sequence from name - will be determined from actual records
 		
 		sm.segments = append(sm.segments, segment)
 	}
@@ -156,26 +167,17 @@ func (sm *SegmentManager) scanSegments() error {
 		}
 	}
 	
+	// Read sequence numbers from actual segment contents
+	sm.updateSequenceNumbers()
+	
 	return nil
 }
 
 // parseSequenceFromName attempts to extract sequence numbers from segment filename.
 func (sm *SegmentManager) parseSequenceFromName(segment *Segment) {
-	base := filepath.Base(segment.Path)
-	// Remove extension
-	base = strings.TrimSuffix(base, ".wal")
-	
-	// Try to find sequence numbers in format: name-startSeq-endSeq-timestamp
-	parts := strings.Split(base, "-")
-	if len(parts) >= 3 {
-		// Try to parse sequence numbers
-		if start, err := strconv.ParseUint(parts[len(parts)-2], 10, 64); err == nil {
-			segment.StartSeq = start
-		}
-		if end, err := strconv.ParseUint(parts[len(parts)-1], 10, 64); err == nil {
-			segment.EndSeq = end
-		}
-	}
+	// Don't try to parse sequence numbers from filename since we use timestamps in the name
+	// The sequence numbers will be determined when reading the actual records
+	// Leave StartSeq and EndSeq as 0, they'll be populated when the segment is read
 }
 
 // cleanupOldSegments removes old segments based on retention policy.
@@ -327,5 +329,44 @@ func (sm *SegmentManager) GetSegmentsInRange(startSeq, endSeq uint64) []*Segment
 		}
 	}
 	return result
+}
+
+// UpdateSegmentSizes refreshes the size information for all segments
+func (sm *SegmentManager) UpdateSegmentSizes() error {
+	for _, segment := range sm.segments {
+		stat, err := os.Stat(segment.Path)
+		if err != nil {
+			// If file doesn't exist, mark segment as corrupted
+			segment.Corrupted = true
+			continue
+		}
+		segment.Size = stat.Size()
+	}
+	return nil
+}
+
+// updateSequenceNumbers reads the first and last records from each segment to determine sequence ranges
+func (sm *SegmentManager) updateSequenceNumbers() {
+	for _, segment := range sm.segments {
+		if segment.Size == 0 {
+			continue
+		}
+		
+		// Read the segment to find first and last sequence numbers
+		records, err := sm.readSegment(segment.Path)
+		if err != nil || len(records) == 0 {
+			continue
+		}
+		
+		// Parse first record for start sequence
+		if firstRecord, err := UnmarshalRecord(records[0]); err == nil {
+			segment.StartSeq = firstRecord.Sequence
+		}
+		
+		// Parse last record for end sequence
+		if lastRecord, err := UnmarshalRecord(records[len(records)-1]); err == nil {
+			segment.EndSeq = lastRecord.Sequence
+		}
+	}
 }
 

@@ -587,3 +587,13 @@ func WithSyncInterval(interval time.Duration) Option {
 		return nil
 	}
 }
+
+// GetSegments returns all segments managed by this WAL.
+func (w *WAL) GetSegments() []*Segment {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	
+	// Update segment sizes before returning
+	w.segments.UpdateSegmentSizes()
+	return w.segments.GetSegments()
+}
