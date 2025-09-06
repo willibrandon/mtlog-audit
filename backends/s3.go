@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"path"
 	"sync"
 	"sync/atomic"
@@ -632,13 +633,43 @@ func (s *S3Backend) generateTimeRangePrefix(start, end time.Time) string {
 	return prefix
 }
 
-// getS3Endpoint returns the S3 endpoint for testing (e.g., LocalStack)
+// getS3Endpoint returns the S3 endpoint for testing (e.g., MinIO, LocalStack)
 func getS3Endpoint() string {
-	// Check for LocalStack or custom endpoint
-	if endpoint := aws.StringValue(aws.String("http://localhost:4566")); isLocalStackRunning(endpoint) {
+	// Check environment variable first
+	if endpoint := os.Getenv("S3_ENDPOINT"); endpoint != "" {
 		return endpoint
 	}
+	if endpoint := os.Getenv("MINIO_ENDPOINT"); endpoint != "" {
+		return endpoint
+	}
+	
+	// Check for MinIO
+	if isMinIORunning("http://localhost:9000") {
+		return "http://localhost:9000"
+	}
+	
+	// Check for LocalStack
+	if isLocalStackRunning("http://localhost:4566") {
+		return "http://localhost:4566"
+	}
+	
 	return ""
+}
+
+// isMinIORunning checks if MinIO is running
+func isMinIORunning(endpoint string) bool {
+	if endpoint == "" {
+		return false
+	}
+	
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(endpoint + "/minio/health/live")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	
+	return resp.StatusCode == 200
 }
 
 // isLocalStackRunning checks if LocalStack is running
@@ -647,7 +678,6 @@ func isLocalStackRunning(endpoint string) bool {
 		return false
 	}
 	
-	// Actually check if LocalStack is reachable
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(endpoint + "/_localstack/health")
 	if err != nil {

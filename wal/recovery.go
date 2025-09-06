@@ -2,6 +2,7 @@ package wal
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -21,13 +22,18 @@ type RecoveryEngine struct {
 	maxRecordSize  int64
 	skipCorrupted  bool
 	verifyChecksum bool
+	// Forensic recovery fields
+	enableForensic bool
+	hashChains     map[uint64][32]byte // sequence -> hash for chain reconstruction
 }
 
 // RecoveredRecord contains data from a recovered WAL record.
 type RecoveredRecord struct {
-	EventData []byte
-	Sequence  uint64
-	BytesRead int
+	EventData      []byte
+	Sequence       uint64
+	Timestamp      uint64
+	BytesRead      int
+	HashChainValid bool
 }
 
 // RecoveryReport contains the results of a recovery operation.
@@ -39,6 +45,11 @@ type RecoveryReport struct {
 	LastGoodSequence  uint64
 	RecoveredSegments []string
 	Errors            []error
+	// Forensic recovery fields
+	HashChainBreaks     int
+	ReconstructedChains int
+	PartialRecords      int
+	RecoveryMethods     []string
 }
 
 // RecoveryOption configures the recovery engine.
@@ -62,6 +73,16 @@ func WithSkipCorrupted(skip bool) RecoveryOption {
 func WithChecksumVerification(verify bool) RecoveryOption {
 	return func(r *RecoveryEngine) {
 		r.verifyChecksum = verify
+	}
+}
+
+// WithForensicRecovery enables advanced forensic recovery techniques
+func WithForensicRecovery(enable bool) RecoveryOption {
+	return func(r *RecoveryEngine) {
+		r.enableForensic = enable
+		if enable {
+			r.hashChains = make(map[uint64][32]byte)
+		}
 	}
 }
 
@@ -454,4 +475,540 @@ func (r *RecoveryEngine) RepairWAL(outputPath string) error {
 		report.RecoveredRecords, outputPath)
 	
 	return nil
+}
+
+// ForensicRecover performs advanced forensic recovery with hash chain reconstruction
+func (r *RecoveryEngine) ForensicRecover() (*RecoveryReport, [][]byte, error) {
+	report := &RecoveryReport{
+		Errors:          make([]error, 0),
+		RecoveryMethods: make([]string, 0),
+	}
+	
+	// First try standard recovery
+	standardReport, records, err := r.Recover()
+	if err != nil && !r.skipCorrupted {
+		return report, nil, err
+	}
+	
+	// Merge standard report
+	*report = *standardReport
+	
+	if !r.enableForensic {
+		return report, records, nil
+	}
+	
+	logger.Log.Info("Starting forensic recovery")
+	report.RecoveryMethods = append(report.RecoveryMethods, "forensic_recovery")
+	
+	// Build hash chain map
+	r.buildHashChainMap(records)
+	
+	// Attempt to recover broken chains
+	additionalRecords := r.reconstructHashChains(report)
+	records = append(records, additionalRecords...)
+	
+	// Try advanced recovery techniques
+	if partialRecords := r.recoverPartialRecords(); len(partialRecords) > 0 {
+		report.RecoveryMethods = append(report.RecoveryMethods, "partial_record_recovery")
+		report.PartialRecords += len(partialRecords)
+		records = append(records, partialRecords...)
+	}
+	
+	// Attempt shadow recovery
+	if shadowRecords := r.recoverFromShadow(); len(shadowRecords) > 0 {
+		report.RecoveryMethods = append(report.RecoveryMethods, "shadow_recovery")
+		records = append(records, shadowRecords...)
+	}
+	
+	return report, records, nil
+}
+
+// buildHashChainMap builds a map of sequence numbers to hashes
+func (r *RecoveryEngine) buildHashChainMap(records [][]byte) {
+	for i, recordData := range records {
+		// Try to extract sequence and hash from recovered data
+		if len(recordData) < 40 {
+			continue
+		}
+		
+		// Create a minimal record just for hash computation
+		record := &Record{
+			Sequence:  uint64(i + 1),
+			EventData: recordData,
+		}
+		hash := record.ComputeHash()
+		r.hashChains[record.Sequence] = hash
+	}
+}
+
+// reconstructHashChains attempts to reconstruct broken hash chains
+func (r *RecoveryEngine) reconstructHashChains(report *RecoveryReport) [][]byte {
+	var reconstructed [][]byte
+	
+	// Scan for hash chain breaks
+	file, err := os.Open(r.path)
+	if err != nil {
+		return reconstructed
+	}
+	defer file.Close()
+	
+	offset := int64(0)
+	stat, _ := file.Stat()
+	fileSize := stat.Size()
+	
+	var prevHash [32]byte
+	var lastGoodHash [32]byte
+	chainBroken := false
+	
+	for offset < fileSize {
+		// Try to read a record
+		record, err := r.readRecordWithHashRecovery(file, offset, prevHash, lastGoodHash)
+		if err != nil {
+			if !chainBroken {
+				report.HashChainBreaks++
+				chainBroken = true
+			}
+			
+			// Skip and continue
+			offset++
+			continue
+		}
+		
+		if record != nil {
+			if chainBroken {
+				report.ReconstructedChains++
+				chainBroken = false
+			}
+			
+			reconstructed = append(reconstructed, record.EventData)
+			lastGoodHash = sha256.Sum256(record.EventData)
+			offset += int64(record.BytesRead)
+		} else {
+			offset++
+		}
+		
+		prevHash = lastGoodHash
+	}
+	
+	return reconstructed
+}
+
+// readRecordWithHashRecovery attempts to read a record with hash chain recovery
+func (r *RecoveryEngine) readRecordWithHashRecovery(file *os.File, offset int64, prevHash, lastGoodHash [32]byte) (*RecoveredRecord, error) {
+	// First try normal read
+	record, err := r.readNextRecord(file, offset)
+	if err == nil {
+		return record, nil
+	}
+	
+	// If hash chain is broken, try to reconstruct
+	if r.enableForensic {
+		// Try using last good hash
+		if record := r.attemptHashReconstruction(file, offset, lastGoodHash); record != nil {
+			return record, nil
+		}
+	}
+	
+	return nil, err
+}
+
+// attemptHashReconstruction tries to reconstruct a record using hash chain forensics
+func (r *RecoveryEngine) attemptHashReconstruction(file *os.File, offset int64, lastGoodHash [32]byte) *RecoveredRecord {
+	_, err := file.Seek(offset, 0)
+	if err != nil {
+		return nil
+	}
+	
+	// Read a larger buffer for comprehensive analysis
+	buffer := make([]byte, min(int(r.maxRecordSize), 64*1024))
+	n, err := file.Read(buffer)
+	if err != nil || n < 100 {
+		return nil
+	}
+	
+	// Strategy 1: Find records with matching hash chains
+	for i := 0; i < n-100; i++ {
+		if binary.LittleEndian.Uint32(buffer[i:]) == MagicHeader {
+			// Found potential header
+			if i+72 > n {
+				continue
+			}
+			
+			// Extract header fields
+			version := binary.LittleEndian.Uint16(buffer[i+4:])
+			flags := binary.LittleEndian.Uint16(buffer[i+6:])
+			length := binary.LittleEndian.Uint32(buffer[i+8:])
+			timestamp := binary.LittleEndian.Uint64(buffer[i+12:])
+			headerCRC := binary.LittleEndian.Uint32(buffer[i+20:])
+			
+			// Validate header structure
+			if version != Version || length > uint32(r.maxRecordSize) {
+				continue
+			}
+			
+			// Calculate expected record size
+			recordSize := 24 + 8 + 32 + int(length) + 4 + 4
+			if i+recordSize > n {
+				continue
+			}
+			
+			// Extract the full potential record
+			potentialRecord := buffer[i : i+recordSize]
+			
+			// Try to validate hash chain
+			if len(potentialRecord) > 32 {
+				// Extract previous hash from record
+				var prevHash [32]byte
+				copy(prevHash[:], potentialRecord[32:64])
+				
+				// Check if this record chains from our last good hash
+				if prevHash == lastGoodHash {
+					// Perfect match! This record continues our chain
+					return r.reconstructRecord(potentialRecord, i, true)
+				}
+				
+				// Check if this record could be part of a fork
+				if r.isValidHashChainFork(prevHash, lastGoodHash) {
+					// This could be a valid fork in the chain
+					return r.reconstructRecord(potentialRecord, i, false)
+				}
+			}
+			
+			// Strategy 2: CRC-based reconstruction
+			if r.attemptCRCReconstruction(potentialRecord, headerCRC) {
+				return r.reconstructRecord(potentialRecord, i, false)
+			}
+			
+			// Strategy 3: Pattern-based reconstruction
+			if r.attemptPatternReconstruction(potentialRecord, timestamp, flags) {
+				return r.reconstructRecord(potentialRecord, i, false)
+			}
+		}
+	}
+	
+	// Strategy 4: Deep forensic recovery - scan for valid JSON events
+	return r.attemptDeepForensicRecovery(buffer, n, lastGoodHash)
+}
+
+// reconstructRecord creates a RecoveredRecord from raw bytes
+func (r *RecoveryEngine) reconstructRecord(data []byte, offset int, chainValid bool) *RecoveredRecord {
+	if len(data) < 72 {
+		return nil
+	}
+	
+	// Extract fields
+	length := binary.LittleEndian.Uint32(data[8:12])
+	timestamp := binary.LittleEndian.Uint64(data[12:20])
+	
+	// Extract sequence if possible
+	var sequence uint64
+	if len(data) > 32 {
+		sequence = binary.LittleEndian.Uint64(data[24:32])
+	}
+	
+	// Extract event data
+	eventDataStart := 24 + 8 + 32 // header + sequence + prevhash
+	eventDataEnd := eventDataStart + int(length)
+	if eventDataEnd > len(data) {
+		eventDataEnd = len(data)
+	}
+	
+	eventData := data[eventDataStart:eventDataEnd]
+	
+	return &RecoveredRecord{
+		EventData:      eventData,
+		Sequence:       sequence,
+		Timestamp:      timestamp,
+		BytesRead:      len(data),
+		HashChainValid: chainValid,
+	}
+}
+
+// isValidHashChainFork checks if a hash could be part of a valid fork
+func (r *RecoveryEngine) isValidHashChainFork(prevHash, lastGoodHash [32]byte) bool {
+	// Check if we've seen this hash before in our chain map
+	for _, knownHash := range r.hashChains {
+		if knownHash == prevHash {
+			return true
+		}
+	}
+	
+	// Check if the hashes are related (share common prefix - indicating possible fork)
+	commonPrefix := 0
+	for i := 0; i < 32; i++ {
+		if prevHash[i] == lastGoodHash[i] {
+			commonPrefix++
+		} else {
+			break
+		}
+	}
+	
+	// If hashes share significant prefix, could be a fork
+	return commonPrefix >= 8
+}
+
+// attemptCRCReconstruction validates record using CRC checks
+func (r *RecoveryEngine) attemptCRCReconstruction(data []byte, expectedHeaderCRC uint32) bool {
+	if len(data) < 24 {
+		return false
+	}
+	
+	// Verify header CRC
+	headerBytes := data[:20]
+	actualCRC := crc32.ChecksumIEEE(headerBytes)
+	
+	if actualCRC != expectedHeaderCRC {
+		// Try to fix single-bit errors
+		for i := 0; i < 20; i++ {
+			for bit := 0; bit < 8; bit++ {
+				// Flip bit
+				testData := make([]byte, 20)
+				copy(testData, headerBytes)
+				testData[i] ^= (1 << bit)
+				
+				if crc32.ChecksumIEEE(testData) == expectedHeaderCRC {
+					// Found the error! Fix it
+					copy(data[:20], testData)
+					return true
+				}
+			}
+		}
+		return false
+	}
+	
+	// Also check data CRC if available
+	if len(data) > 28 {
+		length := binary.LittleEndian.Uint32(data[8:12])
+		expectedEnd := 24 + 8 + 32 + int(length) + 4 + 4
+		if expectedEnd <= len(data) {
+			// Check for valid footer
+			footerOffset := expectedEnd - 4
+			if footerOffset > 0 && footerOffset < len(data)-3 {
+				footer := binary.LittleEndian.Uint32(data[footerOffset:])
+				return footer == MagicFooter
+			}
+		}
+	}
+	
+	return true
+}
+
+// attemptPatternReconstruction uses pattern matching to validate records
+func (r *RecoveryEngine) attemptPatternReconstruction(data []byte, timestamp uint64, flags uint16) bool {
+	// Check timestamp is reasonable (within last 10 years)
+	now := uint64(time.Now().UnixNano())
+	tenYearsAgo := now - uint64(10*365*24*time.Hour.Nanoseconds())
+	
+	if timestamp < tenYearsAgo || timestamp > now+uint64(24*time.Hour.Nanoseconds()) {
+		return false
+	}
+	
+	// Check flags are valid
+	validFlags := RecordFlagDeleted | RecordFlagCompacted
+	if flags & ^uint16(validFlags) != 0 {
+		return false
+	}
+	
+	// Check if event data looks like JSON
+	if len(data) > 72 {
+		length := binary.LittleEndian.Uint32(data[8:12])
+		eventStart := 24 + 8 + 32
+		if eventStart+int(length) <= len(data) {
+			eventData := data[eventStart : eventStart+int(length)]
+			if len(eventData) > 0 {
+				// Check for JSON structure
+				firstChar := eventData[0]
+				lastChar := eventData[len(eventData)-1]
+				isJSON := (firstChar == '{' && lastChar == '}') || 
+				         (firstChar == '[' && lastChar == ']')
+				
+				if isJSON {
+					// Try to validate JSON
+					var test interface{}
+					if json.Unmarshal(eventData, &test) == nil {
+						return true
+					}
+				}
+			}
+		}
+	}
+	
+	return false
+}
+
+// attemptDeepForensicRecovery performs deep analysis to recover records
+func (r *RecoveryEngine) attemptDeepForensicRecovery(buffer []byte, n int, lastGoodHash [32]byte) *RecoveredRecord {
+	// Scan for JSON patterns that might be event data
+	for i := 0; i < n-10; i++ {
+		if buffer[i] == '{' {
+			// Found potential JSON start
+			depth := 1
+			j := i + 1
+			
+			for j < n && depth > 0 {
+				switch buffer[j] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+				j++
+			}
+			
+			if depth == 0 && j-i > 10 {
+				// Found complete JSON object
+				jsonData := buffer[i:j]
+				
+				// Validate it's a log event
+				var event core.LogEvent
+				if err := json.Unmarshal(jsonData, &event); err == nil {
+					// Successfully parsed as log event!
+					// Reconstruct a minimal record
+					return &RecoveredRecord{
+						EventData:      jsonData,
+						Sequence:       0, // Unknown
+						Timestamp:      uint64(event.Timestamp.UnixNano()),
+						BytesRead:      j - i,
+						HashChainValid: false,
+					}
+				}
+			}
+		}
+	}
+	
+	return nil
+}
+
+// looksLikeRecord checks if data looks like a valid record
+func (r *RecoveryEngine) looksLikeRecord(data []byte) bool {
+	if len(data) < 24 {
+		return false
+	}
+	
+	// Check magic header
+	if binary.LittleEndian.Uint32(data) != MagicHeader {
+		return false
+	}
+	
+	// Check version is reasonable
+	version := binary.LittleEndian.Uint16(data[4:])
+	if version > 10 {
+		return false
+	}
+	
+	// Check length is reasonable
+	length := binary.LittleEndian.Uint32(data[8:])
+	if length > uint32(r.maxRecordSize) {
+		return false
+	}
+	
+	return true
+}
+
+// recoverPartialRecords attempts to recover partially written records
+func (r *RecoveryEngine) recoverPartialRecords() [][]byte {
+	var partialRecords [][]byte
+	
+	file, err := os.Open(r.path)
+	if err != nil {
+		return partialRecords
+	}
+	defer file.Close()
+	
+	// Read file in chunks and look for partial records at boundaries
+	stat, _ := file.Stat()
+	fileSize := stat.Size()
+	
+	// Check last 10KB for partial records
+	if fileSize > 10240 {
+		file.Seek(fileSize-10240, 0)
+		buffer := make([]byte, 10240)
+		n, _ := file.Read(buffer)
+		
+		// Scan for incomplete records
+		for i := 0; i < n-100; i++ {
+			if r.looksLikePartialRecord(buffer[i:n]) {
+				if data := r.extractPartialData(buffer[i:n]); data != nil {
+					partialRecords = append(partialRecords, data)
+				}
+			}
+		}
+	}
+	
+	return partialRecords
+}
+
+// looksLikePartialRecord checks for partial record patterns
+func (r *RecoveryEngine) looksLikePartialRecord(data []byte) bool {
+	// Check for record patterns that are incomplete
+	if len(data) < 24 {
+		return false
+	}
+	
+	// Has valid header but no footer
+	hasHeader := binary.LittleEndian.Uint32(data) == MagicHeader
+	hasFooter := false
+	
+	if len(data) > 28 {
+		// Check if there's a footer where expected
+		length := binary.LittleEndian.Uint32(data[8:])
+		expectedFooterPos := 24 + 8 + 32 + int(length) + 4
+		if expectedFooterPos+4 <= len(data) {
+			hasFooter = binary.LittleEndian.Uint32(data[expectedFooterPos:]) == MagicFooter
+		}
+	}
+	
+	return hasHeader && !hasFooter
+}
+
+// extractPartialData attempts to extract usable data from a partial record
+func (r *RecoveryEngine) extractPartialData(data []byte) []byte {
+	if len(data) < 72 {
+		return nil
+	}
+	
+	// Try to extract event data portion
+	length := binary.LittleEndian.Uint32(data[8:])
+	if length > 0 && length < uint32(len(data)-72) {
+		eventData := data[72 : 72+length]
+		
+		// Validate it looks like JSON
+		if len(eventData) > 0 && (eventData[0] == '{' || eventData[0] == '[') {
+			return eventData
+		}
+	}
+	
+	return nil
+}
+
+// recoverFromShadow attempts to recover from shadow copies
+func (r *RecoveryEngine) recoverFromShadow() [][]byte {
+	var shadowRecords [][]byte
+	
+	shadowPath := r.path + ".shadow"
+	if _, err := os.Stat(shadowPath); err != nil {
+		// No shadow file
+		return shadowRecords
+	}
+	
+	// Create recovery engine for shadow file
+	shadowEngine := NewRecoveryEngine(shadowPath,
+		WithSkipCorrupted(true),
+		WithChecksumVerification(false), // Shadow might have relaxed checksums
+	)
+	
+	_, records, err := shadowEngine.Recover()
+	if err == nil {
+		shadowRecords = records
+	}
+	
+	return shadowRecords
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

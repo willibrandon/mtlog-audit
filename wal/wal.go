@@ -43,6 +43,10 @@ type WAL struct {
 	bufferMu    sync.Mutex
 	flushTicker *time.Ticker
 	flushStop   chan struct{}
+	
+	// Torn-write protection
+	doubleWrite *DoubleWriteBuffer
+	journalFile *os.File
 }
 
 // SyncMode defines when the WAL syncs to disk.
@@ -115,6 +119,21 @@ func New(path string, opts ...Option) (*WAL, error) {
 		return nil, fmt.Errorf("failed to stat WAL file: %w", err)
 	}
 
+	// Initialize double-write buffer for torn-write protection
+	journalPath := path + ".journal"
+	journalFile, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
+	if err != nil {
+		file.Close()
+		return nil, fmt.Errorf("failed to open journal file: %w", err)
+	}
+	
+	doubleWrite, err := NewDoubleWriteBuffer(journalFile, cfg.bufferSize)
+	if err != nil {
+		file.Close()
+		journalFile.Close()
+		return nil, fmt.Errorf("failed to create double-write buffer: %w", err)
+	}
+
 	w := &WAL{
 		path:        path,
 		file:        file,
@@ -123,12 +142,22 @@ func New(path string, opts ...Option) (*WAL, error) {
 		currentSize: stat.Size(),
 		syncMode:    cfg.syncMode,
 		buffer:      make([]byte, 0, cfg.bufferSize),
+		doubleWrite: doubleWrite,
+		journalFile: journalFile,
 	}
 
+	// Recover from journal first (for torn-write protection)
+	if err := w.recoverFromJournal(); err != nil {
+		file.Close()
+		journalFile.Close()
+		return nil, fmt.Errorf("failed to recover from journal: %w", err)
+	}
+	
 	// Recover from existing WAL if present
 	if stat.Size() > 0 {
 		if err := w.recover(); err != nil {
 			file.Close()
+			journalFile.Close()
 			return nil, fmt.Errorf("failed to recover WAL: %w", err)
 		}
 	}
@@ -165,13 +194,28 @@ func (w *WAL) Write(event *core.LogEvent) error {
 		return fmt.Errorf("failed to marshal record: %w", err)
 	}
 
-	// Write to file
+	// Use double-write buffer for torn-write protection
+	// 1. First write to journal with sync
+	if err := w.doubleWrite.WriteToJournal(data, w.currentSize); err != nil {
+		return fmt.Errorf("journal write failed: %w", err)
+	}
+	
+	// 2. Then write to main WAL file
 	n, err := w.file.Write(data)
 	if err != nil {
+		// Mark journal entry as incomplete
+		w.doubleWrite.MarkIncomplete()
 		return fmt.Errorf("write failed: %w", err)
 	}
 	if n != len(data) {
+		// Mark journal entry as incomplete
+		w.doubleWrite.MarkIncomplete()
 		return fmt.Errorf("incomplete write: wrote %d of %d bytes", n, len(data))
+	}
+	
+	// 3. Mark journal entry as complete
+	if err := w.doubleWrite.MarkComplete(); err != nil {
+		return fmt.Errorf("failed to mark journal complete: %w", err)
 	}
 
 	// Update state
@@ -230,9 +274,25 @@ func (w *WAL) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	var errs []error
+	
 	if w.file != nil {
-		w.file.Sync()
-		return w.file.Close()
+		if err := w.file.Sync(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to sync WAL: %w", err))
+		}
+		if err := w.file.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to close WAL: %w", err))
+		}
+	}
+	
+	if w.journalFile != nil {
+		if err := w.journalFile.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to close journal: %w", err))
+		}
+	}
+	
+	if len(errs) > 0 {
+		return fmt.Errorf("close errors: %v", errs)
 	}
 
 	return nil
@@ -418,6 +478,42 @@ func (w *WAL) recover() error {
 	// Seek to end for appending
 	_, err = w.file.Seek(0, 2)
 	return err
+}
+
+// recoverFromJournal recovers any incomplete writes from the journal
+func (w *WAL) recoverFromJournal() error {
+	// Check if journal has any incomplete writes
+	incompleteWrites, err := w.doubleWrite.RecoverIncomplete()
+	if err != nil {
+		return fmt.Errorf("failed to recover from journal: %w", err)
+	}
+	
+	// Apply any incomplete writes to the main WAL
+	for _, write := range incompleteWrites {
+		// Seek to the position where write should have occurred
+		if _, err := w.file.Seek(write.Position, 0); err != nil {
+			return fmt.Errorf("failed to seek to position %d: %w", write.Position, err)
+		}
+		
+		// Write the data
+		n, err := w.file.Write(write.Data)
+		if err != nil {
+			return fmt.Errorf("failed to replay journal write: %w", err)
+		}
+		if n != len(write.Data) {
+			return fmt.Errorf("incomplete journal replay: wrote %d of %d bytes", n, len(write.Data))
+		}
+	}
+	
+	// Sync the file after recovery
+	if len(incompleteWrites) > 0 {
+		if err := w.file.Sync(); err != nil {
+			return fmt.Errorf("failed to sync after journal recovery: %w", err)
+		}
+	}
+	
+	// Clear the journal after successful recovery
+	return w.doubleWrite.Clear()
 }
 
 func (w *WAL) rotate() error {

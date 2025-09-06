@@ -1,0 +1,134 @@
+services:
+  # MinIO for S3-compatible storage testing
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_DEFAULT_BUCKETS: mtlog-audit-test,hipaa-audit-test
+      # KMS master key - must be exactly 32 bytes when decoded
+      # This is "this-is-a-32-byte-key-for-minio!" base64 encoded (33 bytes with !)
+      MINIO_KMS_SECRET_KEY: "my-minio-master-key:dGhpcy1pcy1hLTMyLWJ5dGUta2V5LWZvci1taW5pbyE="
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - mtlog
+
+  # Create buckets and configure MinIO
+  minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      # Add MinIO host (new syntax)
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      
+      # Create buckets
+      /usr/bin/mc mb --ignore-existing myminio/mtlog-audit-test;
+      /usr/bin/mc mb --ignore-existing myminio/hipaa-audit-test;
+      /usr/bin/mc mb --ignore-existing myminio/pci-audit-test;
+      /usr/bin/mc mb --ignore-existing myminio/sox-audit-test;
+      /usr/bin/mc mb --ignore-existing myminio/gdpr-audit-test;
+      
+      # Enable versioning for compliance
+      /usr/bin/mc version enable myminio/hipaa-audit-test || true;
+      /usr/bin/mc version enable myminio/sox-audit-test || true;
+      
+      # Set up object lock for HIPAA (6 years retention)
+      /usr/bin/mc retention set --default COMPLIANCE 2190d myminio/hipaa-audit-test || true;
+      
+      # Set up object lock for SOX (7 years retention)  
+      /usr/bin/mc retention set --default COMPLIANCE 2555d myminio/sox-audit-test || true;
+      
+      # Set up lifecycle for GDPR (3 years retention)
+      echo '{\"Rules\":[{\"ID\":\"gdpr-retention\",\"Status\":\"Enabled\",\"Expiration\":{\"Days\":1095}}]}' > /tmp/lifecycle.json;
+      /usr/bin/mc ilm import myminio/gdpr-audit-test < /tmp/lifecycle.json || true;
+      
+      # Enable encryption (using auto-encryption since KMS is configured)
+      # MinIO will automatically encrypt with the configured KMS key
+      echo 'Encryption will be handled by MinIO KMS configuration';
+      
+      echo 'MinIO setup completed successfully';
+      exit 0;
+      "
+    networks:
+      - mtlog
+
+  # LocalStack for additional AWS services testing (optional)
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+    environment:
+      - SERVICES=s3,kms,sts
+      - DEBUG=0
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - mtlog
+
+  # Azurite for Azure Blob Storage testing
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    ports:
+      - "10000:10000"  # Blob service
+      - "10001:10001"  # Queue service
+      - "10002:10002"  # Table service
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --loose
+    volumes:
+      - azurite_data:/data
+    networks:
+      - mtlog
+
+  # Fake GCS for Google Cloud Storage testing
+  fake-gcs:
+    image: fsouza/fake-gcs-server:latest
+    ports:
+      - "4443:4443"
+    command: -scheme http -public-host localhost:4443
+    volumes:
+      - gcs_data:/data
+    networks:
+      - mtlog
+
+  # Torture test container with limited disk space
+  torture-diskfull:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.torture
+    image: mtlog-audit-torture:latest
+    tmpfs:
+      # Use tmpfs with size limit (RAM-based filesystem)
+      - /test:size=100M
+    environment:
+      - TEST_DIR=/test
+      - DISK_LIMIT=100M
+    command: ["/app/torture", "--scenario", "diskfull"]
+    networks:
+      - mtlog
+
+volumes:
+  minio_data:
+  localstack_data:
+  azurite_data:
+  gcs_data:
+
+networks:
+  mtlog:
+    driver: bridge

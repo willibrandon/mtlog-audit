@@ -22,6 +22,8 @@ type Segment struct {
 	Size      int64
 	CreatedAt time.Time
 	Sealed    bool
+	Version   uint16
+	Corrupted bool
 }
 
 // SegmentManager handles multiple WAL segments.
@@ -281,3 +283,50 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// GetAllSegments returns all segments managed by the segment manager
+func (sm *SegmentManager) GetAllSegments() []*Segment {
+	return sm.segments
+}
+
+// AddCompactedSegment adds a compacted segment to the manager
+func (sm *SegmentManager) AddCompactedSegment(seg *Segment) error {
+	sm.segments = append(sm.segments, seg)
+	// Re-sort segments by start sequence
+	sort.Slice(sm.segments, func(i, j int) bool {
+		return sm.segments[i].StartSeq < sm.segments[j].StartSeq
+	})
+	return nil
+}
+
+// RemoveSegment removes a segment from the manager
+func (sm *SegmentManager) RemoveSegment(seg *Segment) error {
+	for i, s := range sm.segments {
+		if s.Path == seg.Path {
+			// Remove from slice
+			sm.segments = append(sm.segments[:i], sm.segments[i+1:]...)
+			// Adjust active index if needed
+			if i == sm.activeIndex {
+				sm.activeIndex = -1
+			} else if i < sm.activeIndex {
+				sm.activeIndex--
+			}
+			// Delete the file
+			return os.Remove(seg.Path)
+		}
+	}
+	return nil
+}
+
+// GetSegmentsInRange returns segments within a sequence range
+func (sm *SegmentManager) GetSegmentsInRange(startSeq, endSeq uint64) []*Segment {
+	var result []*Segment
+	for _, seg := range sm.segments {
+		// Check if segment overlaps with the range
+		if seg.EndSeq >= startSeq && seg.StartSeq <= endSeq {
+			result = append(result, seg)
+		}
+	}
+	return result
+}
+

@@ -1,0 +1,40 @@
+# Torture test container with controlled environment
+FROM golang:1.25-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache gcc musl-dev
+
+WORKDIR /build
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the torture test binary
+RUN go build -tags=torture -o /app/torture ./cmd/mtlog-audit
+
+# Runtime stage
+FROM alpine:3.20
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    util-linux \
+    e2fsprogs
+
+# Copy the binary
+COPY --from=builder /app/torture /app/torture
+
+# Create test directory
+RUN mkdir -p /test
+
+# Set up disk quota support (if needed)
+RUN echo "Setting up test environment..."
+
+WORKDIR /test
+
+# Default command runs torture tests
+CMD ["/app/torture", "--scenario", "all"]

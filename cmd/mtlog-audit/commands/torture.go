@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/willibrandon/mtlog-audit/internal/logger"
@@ -41,12 +42,18 @@ Examples:
 			}
 			logger.Log.Info("")
 
+			// Use TMPDIR environment variable if set, otherwise default to /tmp
+			tempDir := "/tmp"
+			if envTmpDir := os.Getenv("TMPDIR"); envTmpDir != "" {
+				tempDir = envTmpDir
+			}
+
 			// Configure test suite
 			cfg := torture.Config{
 				Iterations:    iterations,
 				StopOnFailure: stopOnFailure,
 				Verbose:       verbose,
-				TempDir:       "/tmp",
+				TempDir:       tempDir,
 			}
 
 			suite := torture.NewSuite(cfg)

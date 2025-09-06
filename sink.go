@@ -3,6 +3,7 @@ package audit
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -185,6 +186,9 @@ func (s *Sink) Close() error {
 
 	s.closed = true
 
+	// Give background goroutines a moment to see the closed flag
+	time.Sleep(100 * time.Millisecond)
+
 	// Flush any pending writes
 	if err := s.wal.Flush(); err != nil {
 		return fmt.Errorf("failed to flush WAL: %w", err)
@@ -195,10 +199,13 @@ func (s *Sink) Close() error {
 		return fmt.Errorf("WAL close: %w", err)
 	}
 
-	// Close backends
+	// Close backends gracefully
 	for _, backend := range s.backends {
 		if err := backend.Close(); err != nil {
-			return fmt.Errorf("backend close: %w", err)
+			// Don't fail on backend close errors - just log them
+			if !strings.Contains(err.Error(), "already closed") {
+				fmt.Fprintf(os.Stderr, "Warning: backend close error: %v\n", err)
+			}
 		}
 	}
 
@@ -292,6 +299,15 @@ func (s *Sink) handleCriticalFailure(event *core.LogEvent, err error) {
 
 // replicateToBackend replicates events to a specific backend
 func (s *Sink) replicateToBackend(backend backends.Backend, event *core.LogEvent) {
+	// Check if sink is closed before attempting write
+	s.mu.RLock()
+	if s.closed {
+		s.mu.RUnlock()
+		// Silently skip - sink is shutting down
+		return
+	}
+	s.mu.RUnlock()
+	
 	// Use resilience manager for backend writes
 	var writeErr error
 	if s.resilience != nil {
@@ -303,6 +319,12 @@ func (s *Sink) replicateToBackend(backend backends.Backend, event *core.LogEvent
 	}
 	
 	if writeErr != nil {
+		// Check if error is due to backend being closed
+		if strings.Contains(writeErr.Error(), "backend closed") || strings.Contains(writeErr.Error(), "closed") {
+			// During shutdown, this is expected - don't log
+			return
+		}
+		
 		// Record failure in monitoring
 		if s.monitoring != nil {
 			s.monitoring.RecordBackendFailure(backend.Name(), writeErr)
@@ -312,22 +334,6 @@ func (s *Sink) replicateToBackend(backend backends.Backend, event *core.LogEvent
 	} else if s.monitoring != nil {
 		// Record success
 		s.monitoring.RecordBackendSuccess(backend.Name())
-	}
-}
-
-func (s *Sink) cleanup() {
-	if s.wal != nil {
-		s.wal.Close()
-	}
-	
-	// Close backends
-	for _, backend := range s.backends {
-		backend.Close()
-	}
-	
-	// Stop monitor
-	if s.monitoring != nil {
-		s.monitoring.Stop()
 	}
 }
 

@@ -1,0 +1,37 @@
+# Force Unix line endings for shell scripts
+*.sh text eol=lf
+
+# Force Unix line endings for Makefiles
+Makefile text eol=lf
+*.mk text eol=lf
+
+# Force Unix line endings for Docker files
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+docker-compose.yaml text eol=lf
+.dockerignore text eol=lf
+
+# Force Unix line endings for .env files
+.env text eol=lf
+.env.* text eol=lf
+
+# Go files should use native line endings but normalize to LF in repo
+*.go text=auto eol=lf
+*.mod text=auto eol=lf
+*.sum text=auto eol=lf
+
+# Markdown and documentation
+*.md text=auto
+*.txt text=auto
+
+# YAML files
+*.yml text=auto eol=lf
+*.yaml text=auto eol=lf
+
+# JSON files
+*.json text=auto eol=lf
+
+# Configuration files
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.editorconfig text eol=lf

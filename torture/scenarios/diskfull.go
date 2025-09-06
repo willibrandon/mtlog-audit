@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	audit "github.com/willibrandon/mtlog-audit"
@@ -60,14 +59,15 @@ func (d *DiskFull) Execute(sink *audit.Sink, dir string) error {
 		}()
 
 		for i := 0; i < d.EventCount; i++ {
-			// Simulate disk full condition by creating a large file
+			// Fill the disk at the specified point
 			if i == int(fillAt) {
-				// Create a file that fills up available space
-				// This is a simulation - in real tests we'd use cgroups or similar
+				// Create files that actually fill up available disk space
+				// When running in Docker, this will hit the volume/tmpfs limit
+				// When running locally, this will fill available space minus buffer
 				dummyFile := filepath.Join(dir, "disk-filler.tmp")
 				if err := d.simulateDiskFull(dummyFile); err != nil {
 					select {
-					case errors <- fmt.Errorf("failed to simulate disk full: %w", err):
+					case errors <- fmt.Errorf("failed to fill disk: %w", err):
 					default:
 					}
 					return
@@ -140,30 +140,72 @@ func (d *DiskFull) Verify(dir string) error {
 	return nil
 }
 
-// simulateDiskFull creates a large file to simulate disk full condition
+// simulateDiskFull creates files to actually fill the available disk space
 func (d *DiskFull) simulateDiskFull(filePath string) error {
-	// In a real scenario, this would actually fill the disk
-	// For testing, we just create a reasonably large file
-	// to simulate the condition without actually filling the disk
-	
+	// Get available disk space using platform-specific implementation
+	available, err := getAvailableDiskSpace(filepath.Dir(filePath))
+	if err != nil {
+		return fmt.Errorf("failed to get disk space: %w", err)
+	}
+
+	// Leave 1MB buffer to avoid completely filling the disk
+	// This ensures the OS can still function
+	buffer := uint64(1024 * 1024)
+	if available <= buffer {
+		// Already at or near capacity
+		return nil
+	}
+	toWrite := available - buffer
+
+	// Create the filler file
 	file, err := os.Create(filePath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	// Write 10MB of data to simulate partial disk usage
-	// This doesn't actually cause ENOSPC but simulates the scenario
-	data := make([]byte, 1024*1024) // 1MB buffer
-	for i := 0; i < 10; i++ {
-		if _, err := file.Write(data); err != nil {
-			// If we get an error here, it might be real ENOSPC
-			if err == syscall.ENOSPC {
-				return nil // This is what we wanted to simulate
+	// Write in chunks to fill the disk
+	chunkSize := uint64(1024 * 1024) // 1MB chunks
+	chunk := make([]byte, chunkSize)
+	
+	// Fill chunk with non-zero data to ensure it actually uses disk space
+	// (some filesystems optimize away zero-filled files)
+	for i := range chunk {
+		chunk[i] = byte(i % 256)
+	}
+
+	written := uint64(0)
+	for written < toWrite {
+		// Calculate how much to write in this iteration
+		remaining := toWrite - written
+		writeSize := chunkSize
+		if remaining < chunkSize {
+			writeSize = remaining
+		}
+
+		n, err := file.Write(chunk[:writeSize])
+		if err != nil {
+			// We expect disk full errors at some point
+			if isNoSpaceError(err) || os.IsNotExist(err) {
+				return nil // Success - disk is full
 			}
-			return err
+			return fmt.Errorf("write failed: %w", err)
+		}
+		written += uint64(n)
+
+		// Sync periodically to ensure data hits disk
+		if written%(10*chunkSize) == 0 {
+			if err := file.Sync(); err != nil {
+				if isNoSpaceError(err) {
+					return nil // Success - disk is full
+				}
+				// Ignore sync errors, continue writing
+			}
 		}
 	}
+
+	// Final sync to ensure all data is on disk
+	file.Sync()
 
 	return nil
 }
