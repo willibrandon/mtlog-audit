@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Quick Reference
+
+- **📋 Implementation Plan**: See `docs/implementation-roadmap.md` for detailed 6-week roadmap to 100%
+- **📐 Design Specification**: See `docs/design.md` for complete architecture and features
+- **📖 Implementation Guide**: See `docs/guide.md` for step-by-step implementation instructions
+- **📊 Progress Dashboard**: Current completion is **67%** (35/52 checklist items)
+- **🎯 Next Sprint**: Torture testing and performance validation (Week 1-2)
+
 ## Project Overview
 
 mtlog-audit is a bulletproof audit logging sink for Go applications that guarantees zero data loss. It's designed as a standalone project that integrates with [mtlog](https://github.com/willibrandon/mtlog) through the `core.LogEventSink` interface, but can also work with other Go logging libraries (slog, logr, zerolog).
@@ -10,7 +18,69 @@ mtlog-audit is a bulletproof audit logging sink for Go applications that guarant
 
 ## Repository Status
 
-This is a design-phase repository containing comprehensive documentation for implementing mtlog-audit. The actual implementation is planned according to the design documents.
+**Current Phase**: Active Development (67% Complete)
+
+mtlog-audit has a **solid, functional core** with approximately **40-50% feature completion**. The project consists of ~19,000 lines of Go code across 18 test files with strong test coverage in core packages.
+
+### ✅ Production-Ready Components
+- Core Sink implementing `core.LogEventSink` (47.4% test coverage)
+- WAL with CRC32 checksums and hash chaining (57.5% test coverage)
+- Segment management and compaction
+- Advanced recovery engine (90% complete)
+- All cloud backends (S3, Azure, GCS)
+- CLI tool with 8 commands
+- Basic torture testing framework
+- Resilience primitives (circuit breaker, retry)
+
+### 🚧 In Development (See docs/implementation-roadmap.md)
+- Advanced torture scenarios (3/8 complete)
+- 1M+ iteration validation
+- Performance optimization and benchmarks
+- Complete compliance features (Merkle tree, retention policies)
+- Multi-backend quorum
+- Monitoring integration and testing
+- Comprehensive documentation
+
+### 📊 Key Metrics
+- **Code**: ~19,000 lines of Go
+- **Test Coverage**: 47.4% (main), 57.5% (WAL), 41.5% (compliance)
+- **CLI Commands**: 8/10 planned
+- **Backends**: 4/4 cloud providers
+- **Torture Scenarios**: 3/8 implemented
+
+**For detailed completion status and implementation plan, see `docs/implementation-roadmap.md`**
+
+## AI Assistant Guidance
+
+When working with this codebase, Claude Code should:
+
+### Priority Focus Areas
+1. **Implement missing torture scenarios** (`torture/scenarios/*.go`) - Critical path to v1.0
+2. **Add performance benchmarks** (`performance/bench_test.go`) - Validate < 5ms P99 target
+3. **Complete compliance features** (Merkle tree, retention policies) - Enterprise requirement
+4. **Improve test coverage** - Target 60%+ across all packages
+5. **Write missing documentation** - Deployment guides, API reference
+
+### Code Quality Standards
+- **Test First**: Write tests before implementation (TDD)
+- **No Placeholders**: All code must be production-ready, no TODOs
+- **Durability First**: Favor correctness over performance, use O_SYNC/fsync
+- **Error Handling**: Never ignore errors, always handle gracefully
+- **Documentation**: All public APIs must have godoc comments with examples
+
+### Testing Requirements
+- Unit tests for all new functions
+- Integration tests for cross-component features
+- Benchmark tests for performance-critical paths
+- Torture tests for reliability claims
+- Minimum 60% coverage for new code
+
+### When Implementing Features
+1. Consult `docs/implementation-roadmap.md` for detailed specifications
+2. Follow the code patterns established in existing packages
+3. Ensure backward compatibility with existing WAL format
+4. Add Prometheus metrics for observable operations
+5. Update CLAUDE.md if architecture changes
 
 ## Common Development Commands
 
@@ -142,20 +212,28 @@ auditSink, _ := audit.New(
 logger := mtlog.New(mtlog.WithSink(auditSink))
 ```
 
-### Implementation Phases
+### Implementation Phases - Current Status
 
-The design document (`docs/design.md`) outlines 10 implementation phases:
+The design document (`docs/design.md`) outlines 10 implementation phases. Current progress:
 
-1. **Foundation** (Days 1-2): Repository setup, interfaces, basic sink
-2. **WAL Implementation** (Days 3-5): Record format, segments, integrity
-3. **Recovery System** (Days 6-7): Corruption detection and recovery
-4. **Compliance** (Days 8-9): Profiles, encryption, signing
-5. **Backends** (Days 10-11): Storage backends, replication
-6. **Torture Testing** (Days 12-13): Test framework and scenarios
-7. **CLI Tools** (Days 14-15): Management commands
-8. **Documentation** (Day 16): Comprehensive docs
-9. **Performance** (Days 17-18): Optimization, benchmarking
-10. **Polish** (Days 19-20): Metrics, monitoring, final testing
+1. **Foundation** ✅ **100% Complete** - Repository setup, interfaces, basic sink
+2. **WAL Implementation** ✅ **95% Complete** - Record format, segments, integrity
+3. **Recovery System** ✅ **90% Complete** - Corruption detection and recovery
+4. **Compliance** ⚠️ **60% Complete** - Profiles, encryption, signing (missing: Merkle tree, retention)
+5. **Backends** ⚠️ **70% Complete** - Storage backends (missing: multi-backend quorum)
+6. **Torture Testing** ⚠️ **40% Complete** - Test framework (missing: 5 scenarios, 1M validation)
+7. **CLI Tools** ✅ **85% Complete** - 8/10 management commands implemented
+8. **Documentation** ⚠️ **50% Complete** - Design docs excellent, missing API/deployment guides
+9. **Performance** ⚠️ **30% Complete** - Basic structures, no optimization/benchmarks yet
+10. **Polish** ⚠️ **25% Complete** - Monitoring exists, needs integration and testing
+
+**Overall Completion**: 67% (35/52 checklist items from guide.md)
+
+**Next Priorities** (see `docs/implementation-roadmap.md` for details):
+- Sprint 1: Complete torture testing with 1M+ iterations
+- Sprint 2: Finish compliance features (Merkle tree, retention, multi-backend)
+- Sprint 3: Integrate monitoring and achieve 60%+ test coverage
+- Sprint 4: Complete documentation and examples
 
 ### Key Design Principles
 
@@ -165,9 +243,25 @@ The design document (`docs/design.md`) outlines 10 implementation phases:
 4. **Version Everything**: File formats include version numbers for compatibility
 5. **Test Everything**: Especially failure scenarios through torture testing
 
-### Performance Targets
+### Performance Targets vs Current State
 
-- **Zero data loss** in 10M+ torture test iterations
-- **< 5ms P99 latency** at 10,000 events/second
-- **99.999% recovery rate** from corruption
-- **100% compliance** validation for all profiles
+| Metric | Target | Current Status | Notes |
+|--------|--------|----------------|-------|
+| Torture test iterations | 1,000,000+ | ~100 (0.01%) | Need to implement 5 more scenarios |
+| Data loss | Zero | ✅ Zero | All current tests passing |
+| P99 latency | < 5ms | ⚠️ Not measured | Benchmarks needed |
+| Recovery rate | 99.999% | ~99% (estimated) | Good but needs validation |
+| Compliance validation | 100% | ~60% | Missing Merkle tree, retention |
+| Test coverage | > 60% | 47.4% avg | WAL at 57.5%, needs improvement |
+
+**Current Strengths**:
+- Solid WAL implementation with proven recovery
+- All cloud backends functional
+- Core sink production-ready
+- Zero data loss in existing tests
+
+**Critical Gaps** (see `docs/implementation-roadmap.md`):
+- Torture testing not at scale
+- Performance not benchmarked
+- Compliance features incomplete
+- Monitoring not fully integrated
