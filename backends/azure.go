@@ -18,16 +18,16 @@ import (
 
 // AzureBackend implements the Backend interface for Azure Blob Storage
 type AzureBackend struct {
-	config         AzureConfig
-	containerURL   azblob.ContainerURL
-	mu             sync.Mutex
-	buffer         []*core.LogEvent
-	lastFlush      time.Time
-	batchSize      int
-	flushTicker    *time.Ticker
-	stopChan       chan struct{}
-	wg             sync.WaitGroup
-	uploadedBlobs  map[string]string // blob name -> MD5 hash for verification
+	config        AzureConfig
+	containerURL  azblob.ContainerURL
+	mu            sync.Mutex
+	buffer        []*core.LogEvent
+	lastFlush     time.Time
+	batchSize     int
+	flushTicker   *time.Ticker
+	stopChan      chan struct{}
+	wg            sync.WaitGroup
+	uploadedBlobs map[string]string // blob name -> MD5 hash for verification
 }
 
 // NewAzureBackend creates a new Azure backend
@@ -44,7 +44,7 @@ func NewAzureBackend(cfg AzureConfig) (*AzureBackend, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid connection string: %w", err)
 	}
-	
+
 	// Create shared key credential
 	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
 	if err != nil {
@@ -53,7 +53,7 @@ func NewAzureBackend(cfg AzureConfig) (*AzureBackend, error) {
 
 	// Create pipeline
 	pipeline := azblob.NewPipeline(credential, azblob.PipelineOptions{})
-	
+
 	// Create container URL
 	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", accountName, cfg.Container))
 	containerURL := azblob.NewContainerURL(*u, pipeline)
@@ -98,11 +98,11 @@ func parseConnectionString(connStr string) (accountName, accountKey string, err 
 			accountKey = string(bytes.TrimPrefix(part, []byte("AccountKey=")))
 		}
 	}
-	
+
 	if accountName == "" || accountKey == "" {
 		return "", "", fmt.Errorf("connection string must contain AccountName and AccountKey")
 	}
-	
+
 	return accountName, accountKey, nil
 }
 
@@ -112,8 +112,8 @@ func isAlreadyExistsError(err error) bool {
 		return false
 	}
 	// Azure returns 409 Conflict when container already exists
-	return bytes.Contains([]byte(err.Error()), []byte("409")) || 
-		   bytes.Contains([]byte(err.Error()), []byte("already exists"))
+	return bytes.Contains([]byte(err.Error()), []byte("409")) ||
+		bytes.Contains([]byte(err.Error()), []byte("already exists"))
 }
 
 // Write writes an event to Azure
@@ -176,7 +176,7 @@ func (ab *AzureBackend) VerifyIntegrity() (*IntegrityReport, error) {
 
 		for _, blobItem := range listBlob.Segment.BlobItems {
 			report.TotalRecords++
-			
+
 			// Get blob properties to check MD5
 			blobURL := ab.containerURL.NewBlockBlobURL(blobItem.Name)
 			props, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
@@ -190,7 +190,7 @@ func (ab *AzureBackend) VerifyIntegrity() (*IntegrityReport, error) {
 			if storedHash, exists := ab.uploadedBlobs[blobItem.Name]; exists {
 				blobMD5 := base64.StdEncoding.EncodeToString(props.ContentMD5())
 				if blobMD5 != storedHash {
-					report.Errors = append(report.Errors, fmt.Sprintf("MD5 mismatch for %s: expected %s, got %s", 
+					report.Errors = append(report.Errors, fmt.Sprintf("MD5 mismatch for %s: expected %s, got %s",
 						blobItem.Name, storedHash, blobMD5))
 					report.Valid = false
 				}
@@ -252,18 +252,18 @@ func (ab *AzureBackend) flushLocked() error {
 	if ab.config.Prefix != "" {
 		blobName = fmt.Sprintf("%s/%s", ab.config.Prefix, blobName)
 	}
-	
+
 	// Compress the data
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	encoder := json.NewEncoder(gw)
-	
+
 	for _, event := range ab.buffer {
 		if err := encoder.Encode(event); err != nil {
 			return fmt.Errorf("failed to encode event: %w", err)
 		}
 	}
-	
+
 	if err := gw.Close(); err != nil {
 		return fmt.Errorf("failed to compress data: %w", err)
 	}
@@ -278,7 +278,7 @@ func (ab *AzureBackend) flushLocked() error {
 	defer cancel()
 
 	blobURL := ab.containerURL.NewBlockBlobURL(blobName)
-	
+
 	// Set blob options
 	options := azblob.UploadToBlockBlobOptions{
 		BlobHTTPHeaders: azblob.BlobHTTPHeaders{
@@ -317,7 +317,7 @@ func (ab *AzureBackend) flushLocked() error {
 		default:
 			tier = azblob.AccessTierHot
 		}
-		
+
 		_, err = blobURL.SetTier(ctx, tier, azblob.LeaseAccessConditions{}, azblob.RehydratePriorityNone)
 		if err != nil {
 			// Log but don't fail - tier setting might require special permissions

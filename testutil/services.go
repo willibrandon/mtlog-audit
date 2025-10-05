@@ -33,13 +33,13 @@ func (sc *ServiceChecker) IsMinIOAvailable() bool {
 	if endpoint == "" {
 		endpoint = "http://localhost:9000"
 	}
-	
+
 	resp, err := sc.client.Get(endpoint + "/minio/health/live")
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
-	
+
 	return resp.StatusCode == http.StatusOK
 }
 
@@ -49,13 +49,13 @@ func (sc *ServiceChecker) IsLocalStackAvailable() bool {
 	if endpoint == "" {
 		endpoint = "http://localhost:4566"
 	}
-	
+
 	resp, err := sc.client.Get(endpoint + "/_localstack/health")
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
-	
+
 	return resp.StatusCode == http.StatusOK
 }
 
@@ -68,7 +68,7 @@ func (sc *ServiceChecker) IsAzuriteAvailable() bool {
 		return false
 	}
 	defer resp.Body.Close()
-	
+
 	// Azurite returns 403 for unauthorized, which means it's running
 	// 200 would mean successful auth (shouldn't happen without proper headers)
 	return resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusOK
@@ -82,7 +82,7 @@ func (sc *ServiceChecker) IsFakeGCSAvailable() bool {
 		return false
 	}
 	defer resp.Body.Close()
-	
+
 	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized
 }
 
@@ -92,17 +92,17 @@ func GetMinIOClient() (*s3.S3, error) {
 	if endpoint == "" {
 		endpoint = "http://localhost:9000"
 	}
-	
+
 	accessKey := os.Getenv("MINIO_ACCESS_KEY")
 	if accessKey == "" {
 		accessKey = "minioadmin"
 	}
-	
+
 	secretKey := os.Getenv("MINIO_SECRET_KEY")
 	if secretKey == "" {
 		secretKey = "minioadmin"
 	}
-	
+
 	sess, err := session.NewSession(&aws.Config{
 		Endpoint:         aws.String(endpoint),
 		Region:           aws.String("us-east-1"),
@@ -113,7 +113,7 @@ func GetMinIOClient() (*s3.S3, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
-	
+
 	return s3.New(sess), nil
 }
 
@@ -129,7 +129,7 @@ func CreateTestBucket(client *s3.S3, bucket string, enableVersioning, enableEncr
 			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 	}
-	
+
 	// Enable versioning if requested
 	if enableVersioning {
 		_, err = client.PutBucketVersioning(&s3.PutBucketVersioningInput{
@@ -142,7 +142,7 @@ func CreateTestBucket(client *s3.S3, bucket string, enableVersioning, enableEncr
 			return fmt.Errorf("failed to enable versioning: %w", err)
 		}
 	}
-	
+
 	// Enable encryption if requested
 	if enableEncryption {
 		_, err = client.PutBucketEncryption(&s3.PutBucketEncryptionInput{
@@ -161,7 +161,7 @@ func CreateTestBucket(client *s3.S3, bucket string, enableVersioning, enableEncr
 			return fmt.Errorf("failed to enable encryption: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -174,7 +174,7 @@ func VerifyS3Encryption(client *s3.S3, bucket, key string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to head object: %w", err)
 	}
-	
+
 	// Check if server-side encryption is enabled
 	return resp.ServerSideEncryption != nil && *resp.ServerSideEncryption == s3.ServerSideEncryptionAes256, nil
 }
@@ -187,22 +187,22 @@ func VerifyS3ObjectLock(client *s3.S3, bucket string) (bool, *time.Duration, err
 	if err != nil {
 		return false, nil, err
 	}
-	
+
 	if resp.ObjectLockConfiguration == nil || resp.ObjectLockConfiguration.ObjectLockEnabled == nil {
 		return false, nil, nil
 	}
-	
+
 	enabled := *resp.ObjectLockConfiguration.ObjectLockEnabled == s3.ObjectLockEnabledEnabled
-	
+
 	var retention *time.Duration
-	if resp.ObjectLockConfiguration.Rule != nil && 
-	   resp.ObjectLockConfiguration.Rule.DefaultRetention != nil &&
-	   resp.ObjectLockConfiguration.Rule.DefaultRetention.Days != nil {
+	if resp.ObjectLockConfiguration.Rule != nil &&
+		resp.ObjectLockConfiguration.Rule.DefaultRetention != nil &&
+		resp.ObjectLockConfiguration.Rule.DefaultRetention.Days != nil {
 		days := *resp.ObjectLockConfiguration.Rule.DefaultRetention.Days
 		duration := time.Duration(days) * 24 * time.Hour
 		retention = &duration
 	}
-	
+
 	return enabled, retention, nil
 }
 
@@ -215,7 +215,7 @@ func CleanupTestBucket(client *s3.S3, bucket string) error {
 	if err != nil {
 		return fmt.Errorf("failed to list objects: %w", err)
 	}
-	
+
 	for _, obj := range listResp.Contents {
 		_, err = client.DeleteObject(&s3.DeleteObjectInput{
 			Bucket: aws.String(bucket),
@@ -225,7 +225,7 @@ func CleanupTestBucket(client *s3.S3, bucket string) error {
 			return fmt.Errorf("failed to delete object %s: %w", *obj.Key, err)
 		}
 	}
-	
+
 	// Delete the bucket
 	_, err = client.DeleteBucket(&s3.DeleteBucketInput{
 		Bucket: aws.String(bucket),
@@ -233,7 +233,7 @@ func CleanupTestBucket(client *s3.S3, bucket string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete bucket: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -241,10 +241,10 @@ func CleanupTestBucket(client *s3.S3, bucket string) error {
 func WaitForService(name string, checkFunc func() bool, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -261,6 +261,6 @@ func isAlreadyExistsError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return err.Error() == s3.ErrCodeBucketAlreadyExists || 
-		   err.Error() == s3.ErrCodeBucketAlreadyOwnedByYou
+	return err.Error() == s3.ErrCodeBucketAlreadyExists ||
+		err.Error() == s3.ErrCodeBucketAlreadyOwnedByYou
 }

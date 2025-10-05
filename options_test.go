@@ -6,7 +6,6 @@ import (
 
 	"github.com/willibrandon/mtlog-audit/backends"
 	"github.com/willibrandon/mtlog-audit/compliance"
-	"github.com/willibrandon/mtlog-audit/wal"
 )
 
 func TestWithBackend(t *testing.T) {
@@ -18,9 +17,9 @@ func TestWithBackend(t *testing.T) {
 		{
 			name: "valid S3 backend",
 			backend: backends.S3Config{
-				Bucket:   "test-bucket",
-				Region:   "us-east-1",
-				Prefix:   "audit/",
+				Bucket: "test-bucket",
+				Region: "us-east-1",
+				Prefix: "audit/",
 			},
 			wantErr: false,
 		},
@@ -125,7 +124,7 @@ func TestMultipleBackends(t *testing.T) {
 
 func TestWithComplianceOptions(t *testing.T) {
 	cfg := defaultConfig()
-	
+
 	// Create mock compliance options
 	opts := []compliance.Option{
 		compliance.WithEncryptionKey([]byte("test-key-32-bytes-long-exactly!!")),
@@ -144,7 +143,7 @@ func TestWithComplianceOptions(t *testing.T) {
 
 func TestWithCircuitBreakerOptions(t *testing.T) {
 	cfg := defaultConfig()
-	
+
 	// Create mock circuit breaker options (as interface{} for now)
 	opts := []interface{}{
 		"option1",
@@ -164,7 +163,7 @@ func TestWithCircuitBreakerOptions(t *testing.T) {
 
 func TestWithMetricsOptions(t *testing.T) {
 	cfg := defaultConfig()
-	
+
 	// Create mock metrics options (as interface{} for now)
 	opts := []interface{}{
 		"metrics1",
@@ -249,9 +248,8 @@ func TestCombinedOptions(t *testing.T) {
 			Bucket: "audit-bucket",
 			Region: "us-west-2",
 		}),
-		WithGroupCommit(200, 50*time.Millisecond),
+		WithGroupCommit(200, 50*time.Millisecond), // Automatically sets SyncBatch mode
 		WithPanicOnFailure(),
-		WithWALSyncMode(wal.SyncBatch),
 	}
 
 	for _, opt := range opts {
@@ -286,6 +284,6 @@ func TestCombinedOptions(t *testing.T) {
 
 // Helper function
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && s[:len(substr)] == substr || 
-		   len(s) >= len(substr) && contains(s[1:], substr)
+	return len(s) >= len(substr) && s[:len(substr)] == substr ||
+		len(s) >= len(substr) && contains(s[1:], substr)
 }

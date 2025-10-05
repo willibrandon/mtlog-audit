@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/willibrandon/mtlog"
-	"github.com/willibrandon/mtlog/core"
 	audit "github.com/willibrandon/mtlog-audit"
+	"github.com/willibrandon/mtlog/core"
 )
 
 func main() {
@@ -34,19 +34,19 @@ func main() {
 
 	// Simulate some important events with message templates
 	logger.Info("Application started with version {version}", "1.0.0")
-	
+
 	// User activity
 	logger.Info("User {userId} logged in from {ip}", 123, "192.168.1.1")
 	time.Sleep(10 * time.Millisecond)
-	
+
 	// Security event
 	logger.Warn("Failed login attempt for user {userId} from {ip} after {attempts} attempts", 456, "10.0.0.1", 3)
 	time.Sleep(10 * time.Millisecond)
-	
+
 	// System error
 	logger.Error("Database connection lost to {database}: {error}", "audit_db", "timeout")
 	time.Sleep(10 * time.Millisecond)
-	
+
 	// Business transaction
 	logger.Info("Transaction {transactionId} processed for {amount:F2} {currency}", "tx-789", 99.99, "USD")
 	time.Sleep(10 * time.Millisecond)

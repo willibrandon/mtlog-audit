@@ -125,7 +125,7 @@ func TestWALReadRange(t *testing.T) {
 	// Read only middle and recent events
 	start := now.Add(-90 * time.Minute)
 	end := now.Add(30 * time.Minute)
-	
+
 	rangeEvents, err := reader.ReadRange(start, end)
 	if err != nil {
 		t.Fatalf("Failed to read range: %v", err)

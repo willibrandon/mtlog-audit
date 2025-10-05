@@ -113,6 +113,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.torture
     image: mtlog-audit-torture:latest
+    pull_policy: build  # Build locally instead of attempting pull first
     tmpfs:
       # Use tmpfs with size limit (RAM-based filesystem)
       - /test:size=100M

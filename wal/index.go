@@ -22,15 +22,15 @@ type Index struct {
 
 // SegmentInfo contains metadata about a WAL segment
 type SegmentInfo struct {
-	Path         string
-	StartSeq     uint64
-	EndSeq       uint64
-	StartTime    time.Time
-	EndTime      time.Time
-	Size         int64
-	RecordCount  int
-	Sealed       bool
-	Corrupted    bool
+	Path        string
+	StartSeq    uint64
+	EndSeq      uint64
+	StartTime   time.Time
+	EndTime     time.Time
+	Size        int64
+	RecordCount int
+	Sealed      bool
+	Corrupted   bool
 }
 
 // IndexEntry represents a single record's location in the WAL
@@ -41,7 +41,7 @@ type IndexEntry struct {
 	Size      int32
 	Timestamp time.Time
 	Checksum  uint32
-	Flags     uint16  // Record flags (deleted, compacted, etc.)
+	Flags     uint16 // Record flags (deleted, compacted, etc.)
 }
 
 // NewIndex creates a new WAL index
@@ -97,7 +97,7 @@ func (idx *Index) indexSegment(seg *Segment) (SegmentInfo, error) {
 
 	offset := int64(0)
 	recordCount := 0
-	
+
 	for {
 		// Read fixed header to get record info
 		headerBuf := make([]byte, 24) // Magic(4) + Version(2) + Flags(2) + Length(4) + Timestamp(8) + CRC32Header(4)
@@ -122,7 +122,7 @@ func (idx *Index) indexSegment(seg *Segment) (SegmentInfo, error) {
 		length := binary.LittleEndian.Uint32(headerBuf[8:12])
 		timestamp := int64(binary.LittleEndian.Uint64(headerBuf[12:20]))
 		crc32Header := binary.LittleEndian.Uint32(headerBuf[20:24])
-		
+
 		// Validate version
 		if version != Version {
 			info.Corrupted = true
@@ -162,7 +162,7 @@ func (idx *Index) indexSegment(seg *Segment) (SegmentInfo, error) {
 		// Calculate total record size: header(24) + sequence(8) + prevhash(32) + data(length) + crc(4) + footer(4)
 		recordSize := int64(24 + 8 + 32 + length + 4 + 4)
 		offset += recordSize
-		
+
 		if _, err := file.Seek(offset, io.SeekStart); err != nil {
 			break
 		}
@@ -194,7 +194,7 @@ func (idx *Index) FindBySequenceExcludeDeleted(seq uint64) (*IndexEntry, error) 
 	if !exists {
 		return nil, fmt.Errorf("sequence %d not found", seq)
 	}
-	
+
 	// Check if record is marked as deleted
 	if entry.Flags&RecordFlagDeleted != 0 {
 		return nil, fmt.Errorf("sequence %d is marked as deleted", seq)
@@ -219,10 +219,10 @@ func (idx *Index) findByTimeRange(start, end time.Time, excludeDeleted bool) ([]
 	defer idx.mu.RUnlock()
 
 	var results []IndexEntry
-	
+
 	// First, find relevant segments
 	relevantSegments := idx.findRelevantSegments(start, end)
-	
+
 	// Then, collect entries from those segments
 	for _, seg := range relevantSegments {
 		for seq := seg.StartSeq; seq <= seg.EndSeq; seq++ {
@@ -231,7 +231,7 @@ func (idx *Index) findByTimeRange(start, end time.Time, excludeDeleted bool) ([]
 				if excludeDeleted && entry.Flags&RecordFlagDeleted != 0 {
 					continue
 				}
-				
+
 				if !entry.Timestamp.Before(start) && !entry.Timestamp.After(end) {
 					results = append(results, entry)
 				}
@@ -250,7 +250,7 @@ func (idx *Index) findByTimeRange(start, end time.Time, excludeDeleted bool) ([]
 // findRelevantSegments returns segments that might contain records in the time range
 func (idx *Index) findRelevantSegments(start, end time.Time) []SegmentInfo {
 	var relevant []SegmentInfo
-	
+
 	for _, seg := range idx.segments {
 		// Check if segment time range overlaps with query range
 		if seg.EndTime.Before(start) {
@@ -261,7 +261,7 @@ func (idx *Index) findRelevantSegments(start, end time.Time) []SegmentInfo {
 		}
 		relevant = append(relevant, seg)
 	}
-	
+
 	return relevant
 }
 
@@ -269,7 +269,7 @@ func (idx *Index) findRelevantSegments(start, end time.Time) []SegmentInfo {
 func (idx *Index) GetSegmentInfo() []SegmentInfo {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	
+
 	result := make([]SegmentInfo, len(idx.segments))
 	copy(result, idx.segments)
 	return result
@@ -293,9 +293,9 @@ func (idx *Index) GetSequenceRange() (min, max uint64) {
 func (idx *Index) AddEntry(entry IndexEntry) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
-	
+
 	idx.entries[entry.Sequence] = entry
-	
+
 	// Update segment info if needed
 	for i := range idx.segments {
 		if idx.segments[i].Path == entry.Segment {
@@ -372,7 +372,7 @@ func (idx *Index) persist() error {
 		if err := binary.Write(file, binary.LittleEndian, int32(seg.RecordCount)); err != nil {
 			return err
 		}
-		
+
 		// Write path
 		pathBytes := []byte(seg.Path)
 		if err := binary.Write(file, binary.LittleEndian, uint16(len(pathBytes))); err != nil {
@@ -420,7 +420,7 @@ func (idx *Index) Load() error {
 	idx.segments = make([]SegmentInfo, 0, segCount)
 	for i := uint32(0); i < segCount; i++ {
 		var seg SegmentInfo
-		
+
 		// Read segment info
 		if err := binary.Read(file, binary.LittleEndian, &seg.StartSeq); err != nil {
 			return err
@@ -428,7 +428,7 @@ func (idx *Index) Load() error {
 		if err := binary.Read(file, binary.LittleEndian, &seg.EndSeq); err != nil {
 			return err
 		}
-		
+
 		var startNano, endNano int64
 		if err := binary.Read(file, binary.LittleEndian, &startNano); err != nil {
 			return err
@@ -438,17 +438,17 @@ func (idx *Index) Load() error {
 		}
 		seg.StartTime = time.Unix(0, startNano)
 		seg.EndTime = time.Unix(0, endNano)
-		
+
 		if err := binary.Read(file, binary.LittleEndian, &seg.Size); err != nil {
 			return err
 		}
-		
+
 		var recordCount int32
 		if err := binary.Read(file, binary.LittleEndian, &recordCount); err != nil {
 			return err
 		}
 		seg.RecordCount = int(recordCount)
-		
+
 		// Read path
 		var pathLen uint16
 		if err := binary.Read(file, binary.LittleEndian, &pathLen); err != nil {
@@ -459,7 +459,7 @@ func (idx *Index) Load() error {
 			return err
 		}
 		seg.Path = string(pathBytes)
-		
+
 		idx.segments = append(idx.segments, seg)
 	}
 
@@ -473,18 +473,18 @@ func (idx *Index) Load() error {
 			continue
 		}
 		defer file.Close()
-		
+
 		// Re-scan segment to rebuild entries
 		idx.scanSegmentForEntries(file, seg.Path)
 	}
-	
+
 	return nil
 }
 
 // scanSegmentForEntries scans a segment file and adds entries to the index
 func (idx *Index) scanSegmentForEntries(file *os.File, path string) error {
 	offset := int64(0)
-	
+
 	for {
 		// Read fixed header to get record info
 		headerBuf := make([]byte, 24)
@@ -506,7 +506,7 @@ func (idx *Index) scanSegmentForEntries(file *os.File, path string) error {
 		if version != Version {
 			break // Skip incompatible versions
 		}
-		
+
 		flags := binary.LittleEndian.Uint16(headerBuf[6:8])
 		length := binary.LittleEndian.Uint32(headerBuf[8:12])
 		timestamp := int64(binary.LittleEndian.Uint64(headerBuf[12:20]))
@@ -535,11 +535,11 @@ func (idx *Index) scanSegmentForEntries(file *os.File, path string) error {
 		// Calculate total record size and seek to next
 		recordSize := int64(24 + 8 + 32 + length + 4 + 4)
 		offset += recordSize
-		
+
 		if _, err := file.Seek(offset, io.SeekStart); err != nil {
 			break
 		}
 	}
-	
+
 	return nil
 }

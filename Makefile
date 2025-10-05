@@ -1,15 +1,33 @@
 # Makefile for mtlog-audit
-.PHONY: build test bench torture clean install docker docker-up docker-down docker-test integration-test
+.PHONY: list build test bench torture clean install docker docker-up docker-down docker-test integration-test
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -X github.com/willibrandon/mtlog-audit.Version=$(VERSION)
 DOCKER_COMPOSE := docker-compose -f docker/docker-compose.yml
 
+list:
+	@echo "Available targets:"
+	@echo "  build                 - Build the mtlog-audit binary"
+	@echo "  test                  - Run unit tests with race detector"
+	@echo "  bench                 - Run performance benchmarks"
+	@echo "  torture               - Run torture tests (1M iterations, 24h timeout)"
+	@echo "  torture-docker        - Run containerized torture tests (1K iterations)"
+	@echo "  torture-docker-diskfull - Run disk full torture test in container"
+	@echo "  torture-docker-full   - Run full containerized torture suite (1M iterations)"
+	@echo "  install               - Install mtlog-audit to GOPATH/bin"
+	@echo "  clean                 - Remove build artifacts and test files"
+	@echo "  docker                - Build Docker image"
+	@echo "  docker-up             - Start Docker test infrastructure (MinIO, Azurite, etc.)"
+	@echo "  docker-down           - Stop Docker test infrastructure"
+	@echo "  docker-test           - Run integration tests with Docker (starts/stops services)"
+	@echo "  integration-test      - Run integration tests (requires docker-up first)"
+	@echo "  test-with-services    - Run tests with Docker services (convenience wrapper)"
+
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/mtlog-audit ./cmd/mtlog-audit
 
 test:
-	go test -race -coverprofile=coverage.out ./...
+	CGO_ENABLED=0 go test -race -coverprofile=coverage.out ./...
 
 bench:
 	go test -bench=. -benchmem ./performance
@@ -37,6 +55,7 @@ install:
 
 clean:
 	rm -rf bin/ coverage.out *.wal
+	go clean -testcache
 
 docker:
 	docker build -t mtlog-audit:$(VERSION) .
@@ -55,7 +74,7 @@ docker-down:
 
 docker-test: docker-up
 	@echo "Running integration tests with Docker infrastructure..."
-	@export $$(cat docker/.env | xargs) && go test -tags=integration ./integration/...
+	@export $$(grep -v '^#' docker/.env | grep -v '^$$' | xargs) && go test -tags=integration ./integration/...
 	@$(MAKE) docker-down
 
 integration-test:

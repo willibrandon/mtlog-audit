@@ -34,15 +34,15 @@ type WAL struct {
 	currentSize int64
 	syncMode    SyncMode
 	closed      atomic.Bool
-	
+
 	// Segment management
-	segments    *SegmentManager
-	
+	segments *SegmentManager
+
 	// Buffering for group commit
 	buffer      []byte
 	flushTicker *time.Ticker
 	flushStop   chan struct{}
-	
+
 	// Torn-write protection
 	doubleWrite *DoubleWriteBuffer
 	journalFile *os.File
@@ -120,12 +120,12 @@ func New(path string, opts ...Option) (*WAL, error) {
 
 	// Initialize double-write buffer for torn-write protection
 	journalPath := path + ".journal"
-	journalFile, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
+	journalFile, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		file.Close()
 		return nil, fmt.Errorf("failed to open journal file: %w", err)
 	}
-	
+
 	doubleWrite, err := NewDoubleWriteBuffer(journalFile, cfg.bufferSize)
 	if err != nil {
 		file.Close()
@@ -151,7 +151,7 @@ func New(path string, opts ...Option) (*WAL, error) {
 		journalFile.Close()
 		return nil, fmt.Errorf("failed to recover from journal: %w", err)
 	}
-	
+
 	// Recover from existing WAL if present
 	if stat.Size() > 0 {
 		if err := w.recover(); err != nil {
@@ -193,12 +193,25 @@ func (w *WAL) Write(event *core.LogEvent) error {
 		return fmt.Errorf("failed to marshal record: %w", err)
 	}
 
+	// Determine if we need to sync based on mode
+	needsSync := false
+	switch w.syncMode {
+	case SyncImmediate:
+		needsSync = true
+	case SyncBatch:
+		// For batch mode, sync every 10 writes
+		needsSync = (w.sequence % 10) == 0
+	case SyncInterval:
+		// Interval sync is handled by background ticker
+		needsSync = false
+	}
+
 	// Use double-write buffer for torn-write protection
-	// 1. First write to journal with sync
-	if err := w.doubleWrite.WriteToJournal(data, w.currentSize); err != nil {
+	// 1. First write to journal (sync only if needed)
+	if err := w.doubleWrite.WriteToJournal(data, w.currentSize, needsSync); err != nil {
 		return fmt.Errorf("journal write failed: %w", err)
 	}
-	
+
 	// 2. Then write to main WAL file
 	n, err := w.file.Write(data)
 	if err != nil {
@@ -211,9 +224,9 @@ func (w *WAL) Write(event *core.LogEvent) error {
 		w.doubleWrite.MarkIncomplete()
 		return fmt.Errorf("incomplete write: wrote %d of %d bytes", n, len(data))
 	}
-	
-	// 3. Mark journal entry as complete
-	if err := w.doubleWrite.MarkComplete(); err != nil {
+
+	// 3. Mark journal entry as complete (sync only if needed)
+	if err := w.doubleWrite.MarkComplete(needsSync); err != nil {
 		return fmt.Errorf("failed to mark journal complete: %w", err)
 	}
 
@@ -221,19 +234,10 @@ func (w *WAL) Write(event *core.LogEvent) error {
 	w.currentSize += int64(n)
 	w.lastHash = record.ComputeHash()
 
-	// Sync based on mode
-	switch w.syncMode {
-	case SyncImmediate:
-		// For immediate mode, sync after every write
+	// Sync main file if needed
+	if needsSync {
 		if err := w.file.Sync(); err != nil {
 			return fmt.Errorf("sync failed: %w", err)
-		}
-	case SyncBatch:
-		// For batch mode, sync every 10 writes or on rotation
-		if w.sequence%10 == 0 {
-			if err := w.file.Sync(); err != nil {
-				return fmt.Errorf("sync failed: %w", err)
-			}
 		}
 	}
 
@@ -275,7 +279,7 @@ func (w *WAL) Close() error {
 	defer w.mu.Unlock()
 
 	var errs []error
-	
+
 	if w.file != nil {
 		if err := w.file.Sync(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to sync WAL: %w", err))
@@ -284,13 +288,13 @@ func (w *WAL) Close() error {
 			errs = append(errs, fmt.Errorf("failed to close WAL: %w", err))
 		}
 	}
-	
+
 	if w.journalFile != nil {
 		if err := w.journalFile.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close journal: %w", err))
 		}
 	}
-	
+
 	if len(errs) > 0 {
 		return fmt.Errorf("close errors: %v", errs)
 	}
@@ -437,12 +441,12 @@ func (w *WAL) readAllRecords() ([][]byte, error) {
 		}
 
 		// Read record length from header (offset 8, 4 bytes)
-		length := binary.LittleEndian.Uint32(data[offset+8:offset+12])
-		
+		length := binary.LittleEndian.Uint32(data[offset+8 : offset+12])
+
 		// Calculate total record size:
 		// header(24) + sequence(8) + prevhash(32) + data(length) + crc(4) + footer(4)
 		totalSize := 24 + 8 + 32 + int(length) + 4 + 4
-		
+
 		if offset+totalSize > len(data) {
 			break // Incomplete record
 		}
@@ -487,14 +491,14 @@ func (w *WAL) recoverFromJournal() error {
 	if err != nil {
 		return fmt.Errorf("failed to recover from journal: %w", err)
 	}
-	
+
 	// Apply any incomplete writes to the main WAL
 	for _, write := range incompleteWrites {
 		// Seek to the position where write should have occurred
 		if _, err := w.file.Seek(write.Position, 0); err != nil {
 			return fmt.Errorf("failed to seek to position %d: %w", write.Position, err)
 		}
-		
+
 		// Write the data
 		n, err := w.file.Write(write.Data)
 		if err != nil {
@@ -504,14 +508,14 @@ func (w *WAL) recoverFromJournal() error {
 			return fmt.Errorf("incomplete journal replay: wrote %d of %d bytes", n, len(write.Data))
 		}
 	}
-	
+
 	// Sync the file after recovery
 	if len(incompleteWrites) > 0 {
 		if err := w.file.Sync(); err != nil {
 			return fmt.Errorf("failed to sync after journal recovery: %w", err)
 		}
 	}
-	
+
 	// Clear the journal after successful recovery
 	return w.doubleWrite.Clear()
 }
@@ -592,7 +596,7 @@ func WithSyncInterval(interval time.Duration) Option {
 func (w *WAL) GetSegments() []*Segment {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	
+
 	// Update segment sizes before returning
 	w.segments.UpdateSegmentSizes()
 	return w.segments.GetSegments()

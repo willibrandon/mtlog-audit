@@ -55,6 +55,6 @@ func main() {
 		}
 		sink.Emit(event)
 	}
-	
+
 	fmt.Printf("Time to write 100 events: %v\n", time.Since(start))
 }

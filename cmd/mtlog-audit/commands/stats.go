@@ -22,29 +22,29 @@ type WALStats struct {
 	SegmentCount int       `json:"segment_count"`
 	CreatedAt    time.Time `json:"created_at"`
 	ModifiedAt   time.Time `json:"modified_at"`
-	
+
 	// Record statistics
-	TotalRecords   int     `json:"total_records"`
-	FirstSequence  uint64  `json:"first_sequence"`
-	LastSequence   uint64  `json:"last_sequence"`
-	ErrorCount     int     `json:"error_count"`
-	WarningCount   int     `json:"warning_count"`
-	InfoCount      int     `json:"info_count"`
-	DebugCount     int     `json:"debug_count"`
-	
+	TotalRecords  int    `json:"total_records"`
+	FirstSequence uint64 `json:"first_sequence"`
+	LastSequence  uint64 `json:"last_sequence"`
+	ErrorCount    int    `json:"error_count"`
+	WarningCount  int    `json:"warning_count"`
+	InfoCount     int    `json:"info_count"`
+	DebugCount    int    `json:"debug_count"`
+
 	// Time range
 	FirstEventTime time.Time `json:"first_event_time"`
 	LastEventTime  time.Time `json:"last_event_time"`
 	Duration       string    `json:"duration"`
-	
+
 	// Segment details
 	Segments []SegmentStats `json:"segments"`
-	
+
 	// Health indicators
 	HasCorruption bool   `json:"has_corruption"`
 	IsSealed      bool   `json:"is_sealed"`
 	Compression   string `json:"compression"`
-	
+
 	// Performance metrics
 	AvgRecordSize    int64   `json:"avg_record_size"`
 	AvgSegmentSize   int64   `json:"avg_segment_size"`
@@ -53,15 +53,15 @@ type WALStats struct {
 
 // SegmentStats contains statistics for a single segment.
 type SegmentStats struct {
-	Path         string    `json:"path"`
-	Size         int64     `json:"size"`
-	StartSeq     uint64    `json:"start_seq"`
-	EndSeq       uint64    `json:"end_seq"`
-	RecordCount  int       `json:"record_count"`
-	CreatedAt    time.Time `json:"created_at"`
-	Sealed       bool      `json:"sealed"`
-	Corrupted    bool      `json:"corrupted"`
-	CompactionPct float64  `json:"compaction_pct"`
+	Path          string    `json:"path"`
+	Size          int64     `json:"size"`
+	StartSeq      uint64    `json:"start_seq"`
+	EndSeq        uint64    `json:"end_seq"`
+	RecordCount   int       `json:"record_count"`
+	CreatedAt     time.Time `json:"created_at"`
+	Sealed        bool      `json:"sealed"`
+	Corrupted     bool      `json:"corrupted"`
+	CompactionPct float64   `json:"compaction_pct"`
 }
 
 // statsCmd creates the stats command.
@@ -130,7 +130,7 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 
 	// Get segments from WAL
 	segments := w.GetSegments()
-	
+
 	// Get modification time from the most recent segment
 	for _, seg := range segments {
 		if stats.ModifiedAt.IsZero() || seg.CreatedAt.After(stats.ModifiedAt) {
@@ -138,11 +138,11 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 		}
 	}
 	stats.SegmentCount = len(segments)
-	
+
 	// Calculate total size and gather segment stats
 	for _, seg := range segments {
 		stats.TotalSize += seg.Size
-		
+
 		if includeSegments {
 			// Calculate record count more safely
 			recordCount := 0
@@ -152,7 +152,7 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 				// For active segments, we don't know the end sequence yet
 				recordCount = -1 // Indicate unknown
 			}
-			
+
 			segStats := SegmentStats{
 				Path:        seg.Path,
 				Size:        seg.Size,
@@ -163,26 +163,26 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 				Sealed:      seg.Sealed,
 				Corrupted:   seg.Corrupted,
 			}
-			
+
 			// Calculate compaction potential (simplified)
 			if seg.Sealed && seg.Size > 0 {
 				// Simple heuristic: segments that are very small might benefit from compaction
 				segStats.CompactionPct = float64(seg.Size) / float64(64*1024*1024) * 100
 			}
-			
+
 			stats.Segments = append(stats.Segments, segStats)
 		}
-		
+
 		// Track earliest creation time
 		if stats.CreatedAt.IsZero() || seg.CreatedAt.Before(stats.CreatedAt) {
 			stats.CreatedAt = seg.CreatedAt
 		}
-		
+
 		// Track corruption
 		if seg.Corrupted {
 			stats.HasCorruption = true
 		}
-		
+
 		// Check if all segments are sealed
 		if !seg.Sealed {
 			stats.IsSealed = false
@@ -193,26 +193,26 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 
 	// Read all events from all segments using the segment manager
 	var events []*core.LogEvent
-	
+
 	for _, segment := range segments {
 		if segment.Size == 0 {
 			continue // Skip empty segments
 		}
-		
+
 		// Read events from this segment
 		segmentReader, err := wal.NewReader(segment.Path)
 		if err != nil {
 			logger.Log.Warn("Failed to read segment {path}: {error}", segment.Path, err)
 			continue
 		}
-		
+
 		segmentEvents, err := segmentReader.ReadAll()
 		segmentReader.Close()
 		if err != nil {
 			logger.Log.Warn("Failed to read all events from segment {path}: {error}", segment.Path, err)
 			continue
 		}
-		
+
 		events = append(events, segmentEvents...)
 	}
 
@@ -221,7 +221,7 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 		stats.FirstEventTime = events[0].Timestamp
 		stats.LastEventTime = events[len(events)-1].Timestamp
 		stats.Duration = stats.LastEventTime.Sub(stats.FirstEventTime).String()
-		
+
 		// Count by level
 		for _, event := range events {
 			switch event.Level {
@@ -235,7 +235,7 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 				stats.DebugCount++
 			}
 		}
-		
+
 		// Calculate average record size
 		if stats.TotalRecords > 0 {
 			stats.AvgRecordSize = stats.TotalSize / int64(stats.TotalRecords)
@@ -281,11 +281,11 @@ func outputStatsJSON(stats *WALStats) error {
 // outputTable outputs statistics in table format.
 func outputTable(stats *WALStats, verbose bool) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	
+
 	fmt.Fprintln(w, "WAL STATISTICS")
 	fmt.Fprintln(w, "==============")
 	fmt.Fprintln(w)
-	
+
 	// File information
 	fmt.Fprintf(w, "Path:\t%s\n", stats.Path)
 	fmt.Fprintf(w, "Total Size:\t%s\n", formatBytes(stats.TotalSize))
@@ -293,18 +293,18 @@ func outputTable(stats *WALStats, verbose bool) error {
 	fmt.Fprintf(w, "Created:\t%s\n", stats.CreatedAt.Format(time.RFC3339))
 	fmt.Fprintf(w, "Modified:\t%s\n", stats.ModifiedAt.Format(time.RFC3339))
 	fmt.Fprintln(w)
-	
+
 	// Record statistics
 	fmt.Fprintln(w, "RECORDS")
 	fmt.Fprintln(w, "-------")
 	fmt.Fprintf(w, "Total:\t%d\n", stats.TotalRecords)
 	fmt.Fprintf(w, "Sequence Range:\t%d - %d\n", stats.FirstSequence, stats.LastSequence)
-	fmt.Fprintf(w, "Time Range:\t%s - %s\n", 
+	fmt.Fprintf(w, "Time Range:\t%s - %s\n",
 		stats.FirstEventTime.Format(time.RFC3339),
 		stats.LastEventTime.Format(time.RFC3339))
 	fmt.Fprintf(w, "Duration:\t%s\n", stats.Duration)
 	fmt.Fprintln(w)
-	
+
 	// Level breakdown
 	fmt.Fprintln(w, "BY LEVEL")
 	fmt.Fprintln(w, "--------")
@@ -313,7 +313,7 @@ func outputTable(stats *WALStats, verbose bool) error {
 	fmt.Fprintf(w, "Info:\t%d\n", stats.InfoCount)
 	fmt.Fprintf(w, "Debug:\t%d\n", stats.DebugCount)
 	fmt.Fprintln(w)
-	
+
 	// Health indicators
 	fmt.Fprintln(w, "HEALTH")
 	fmt.Fprintln(w, "------")
@@ -322,20 +322,20 @@ func outputTable(stats *WALStats, verbose bool) error {
 	fmt.Fprintf(w, "Compression:\t%s\n", stats.Compression)
 	fmt.Fprintf(w, "Fragmentation:\t%.1f%%\n", stats.FragmentationPct)
 	fmt.Fprintln(w)
-	
+
 	// Performance metrics
 	fmt.Fprintln(w, "PERFORMANCE")
 	fmt.Fprintln(w, "-----------")
 	fmt.Fprintf(w, "Avg Record Size:\t%s\n", formatBytes(stats.AvgRecordSize))
 	fmt.Fprintf(w, "Avg Segment Size:\t%s\n", formatBytes(stats.AvgSegmentSize))
 	fmt.Fprintln(w)
-	
+
 	// Detailed segment information if verbose
 	if verbose && len(stats.Segments) > 0 {
 		fmt.Fprintln(w, "SEGMENTS")
 		fmt.Fprintln(w, "--------")
 		fmt.Fprintln(w, "Path\tSize\tRecords\tSeq Range\tSealed\tCompaction%")
-		
+
 		for _, seg := range stats.Segments {
 			fmt.Fprintf(w, "%s\t%s\t%d\t%d-%d\t%v\t%.1f%%\n",
 				seg.Path,
@@ -347,7 +347,7 @@ func outputTable(stats *WALStats, verbose bool) error {
 				seg.CompactionPct)
 		}
 	}
-	
+
 	return w.Flush()
 }
 

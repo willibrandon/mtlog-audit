@@ -34,7 +34,7 @@ func NewEd25519Signer() (*Ed25519Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate Ed25519 key: %w", err)
 	}
-	
+
 	return &Ed25519Signer{
 		privateKey: priv,
 		publicKey:  pub,
@@ -47,26 +47,26 @@ func LoadEd25519Signer(privateKeyPath string) (*Ed25519Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read private key: %w", err)
 	}
-	
+
 	block, _ := pem.Decode(keyData)
 	if block == nil {
 		return nil, fmt.Errorf("failed to parse PEM block")
 	}
-	
+
 	if block.Type != "PRIVATE KEY" {
 		return nil, fmt.Errorf("invalid key type: %s", block.Type)
 	}
-	
+
 	privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse private key: %w", err)
 	}
-	
+
 	ed25519Key, ok := privateKey.(ed25519.PrivateKey)
 	if !ok {
 		return nil, fmt.Errorf("not an Ed25519 private key")
 	}
-	
+
 	return &Ed25519Signer{
 		privateKey: ed25519Key,
 		publicKey:  ed25519Key.Public().(ed25519.PublicKey),
@@ -103,7 +103,7 @@ func NewRSASigner(bits int) (*RSASigner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate RSA key: %w", err)
 	}
-	
+
 	return &RSASigner{
 		privateKey: privateKey,
 		publicKey:  &privateKey.PublicKey,
@@ -165,10 +165,10 @@ func NewSignatureChain(signer Signer) *SignatureChain {
 func (sc *SignatureChain) Sign(sequence uint64, data []byte) (*ChainedSignature, error) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	
+
 	// Calculate data hash
 	dataHash := sha256.Sum256(data)
-	
+
 	// Create chain data: prevHash + dataHash + sequence
 	chainData := make([]byte, len(sc.lastHash)+len(dataHash)+8)
 	copy(chainData, sc.lastHash)
@@ -177,13 +177,13 @@ func (sc *SignatureChain) Sign(sequence uint64, data []byte) (*ChainedSignature,
 	for i := 0; i < 8; i++ {
 		chainData[len(sc.lastHash)+len(dataHash)+i] = byte(sequence >> (8 * i))
 	}
-	
+
 	// Sign the chain data
 	signature, err := sc.signer.Sign(chainData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign chain data: %w", err)
 	}
-	
+
 	// Create chained signature
 	chainedSig := ChainedSignature{
 		Sequence:  sequence,
@@ -192,11 +192,11 @@ func (sc *SignatureChain) Sign(sequence uint64, data []byte) (*ChainedSignature,
 		Signature: signature,
 		Algorithm: sc.signer.Algorithm(),
 	}
-	
+
 	// Update last hash
 	sc.lastHash = dataHash[:]
 	sc.signatures = append(sc.signatures, chainedSig)
-	
+
 	return &chainedSig, nil
 }
 
@@ -204,9 +204,9 @@ func (sc *SignatureChain) Sign(sequence uint64, data []byte) (*ChainedSignature,
 func (sc *SignatureChain) Verify() error {
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
-	
+
 	prevHash := make([]byte, 32) // Start with zeros
-	
+
 	for i, sig := range sc.signatures {
 		// Recreate chain data
 		chainData := make([]byte, len(prevHash)+len(sig.DataHash)+8)
@@ -216,15 +216,15 @@ func (sc *SignatureChain) Verify() error {
 		for j := 0; j < 8; j++ {
 			chainData[len(prevHash)+len(sig.DataHash)+j] = byte(sig.Sequence >> (8 * j))
 		}
-		
+
 		// Verify signature
 		if err := sc.signer.Verify(chainData, sig.Signature); err != nil {
 			return fmt.Errorf("chain verification failed at position %d: %w", i, err)
 		}
-		
+
 		prevHash = sig.DataHash
 	}
-	
+
 	return nil
 }
 
@@ -243,7 +243,7 @@ func SignData(signer Signer, sequence uint64, data []byte, prevHash []byte) (*Si
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &SignatureRecord{
 		Data:      data,
 		Signature: base64.StdEncoding.EncodeToString(signature),
@@ -259,7 +259,7 @@ func VerifySignatureRecord(signer Signer, record *SignatureRecord) error {
 	if err != nil {
 		return fmt.Errorf("failed to decode signature: %w", err)
 	}
-	
+
 	return signer.Verify(record.Data, signature)
 }
 
@@ -271,13 +271,13 @@ func GenerateKeyPair(algorithm string, writer io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("failed to generate Ed25519 key: %w", err)
 		}
-		
+
 		// Marshal private key
 		privKeyBytes, err := x509.MarshalPKCS8PrivateKey(priv)
 		if err != nil {
 			return fmt.Errorf("failed to marshal private key: %w", err)
 		}
-		
+
 		// Write private key PEM
 		privateBlock := &pem.Block{
 			Type:  "PRIVATE KEY",
@@ -286,13 +286,13 @@ func GenerateKeyPair(algorithm string, writer io.Writer) error {
 		if err := pem.Encode(writer, privateBlock); err != nil {
 			return fmt.Errorf("failed to encode private key: %w", err)
 		}
-		
+
 		// Marshal public key
 		pubKeyBytes, err := x509.MarshalPKIXPublicKey(pub)
 		if err != nil {
 			return fmt.Errorf("failed to marshal public key: %w", err)
 		}
-		
+
 		// Write public key PEM
 		publicBlock := &pem.Block{
 			Type:  "PUBLIC KEY",
@@ -301,19 +301,19 @@ func GenerateKeyPair(algorithm string, writer io.Writer) error {
 		if err := pem.Encode(writer, publicBlock); err != nil {
 			return fmt.Errorf("failed to encode public key: %w", err)
 		}
-		
+
 	case "RSA", "RSA-PSS":
 		privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
 		if err != nil {
 			return fmt.Errorf("failed to generate RSA key: %w", err)
 		}
-		
+
 		// Marshal private key
 		privKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
 		if err != nil {
 			return fmt.Errorf("failed to marshal private key: %w", err)
 		}
-		
+
 		// Write private key PEM
 		privateBlock := &pem.Block{
 			Type:  "RSA PRIVATE KEY",
@@ -322,13 +322,13 @@ func GenerateKeyPair(algorithm string, writer io.Writer) error {
 		if err := pem.Encode(writer, privateBlock); err != nil {
 			return fmt.Errorf("failed to encode private key: %w", err)
 		}
-		
+
 		// Marshal public key
 		pubKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 		if err != nil {
 			return fmt.Errorf("failed to marshal public key: %w", err)
 		}
-		
+
 		// Write public key PEM
 		publicBlock := &pem.Block{
 			Type:  "PUBLIC KEY",
@@ -337,10 +337,10 @@ func GenerateKeyPair(algorithm string, writer io.Writer) error {
 		if err := pem.Encode(writer, publicBlock); err != nil {
 			return fmt.Errorf("failed to encode public key: %w", err)
 		}
-		
+
 	default:
 		return fmt.Errorf("unsupported algorithm: %s", algorithm)
 	}
-	
+
 	return nil
 }

@@ -1,9 +1,9 @@
 package backends
 
 import (
+	"os"
 	"testing"
 	"time"
-	"os"
 
 	"github.com/willibrandon/mtlog/core"
 )
@@ -162,7 +162,7 @@ func TestS3BackendWithMockCredentials(t *testing.T) {
 
 func TestFilesystemBackend(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	config := FilesystemConfig{
 		Path: tmpDir,
 	}

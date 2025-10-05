@@ -6,10 +6,11 @@ require (
 	cloud.google.com/go/storage v1.56.1
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/aws/aws-sdk-go v1.55.8
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/prometheus/client_golang v1.23.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.0
-	github.com/willibrandon/mtlog v0.9.0
+	github.com/willibrandon/mtlog v0.10.0
 	golang.org/x/crypto v0.41.0
 	google.golang.org/api v0.247.0
 )
@@ -27,7 +28,6 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.53.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.53.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20250501225837-2ac532fd4443 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4 // indirect

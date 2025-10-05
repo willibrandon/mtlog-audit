@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/willibrandon/mtlog/core"
 	"github.com/willibrandon/mtlog-audit/backends"
 	"github.com/willibrandon/mtlog-audit/compliance"
 	"github.com/willibrandon/mtlog-audit/wal"
+	"github.com/willibrandon/mtlog/core"
 )
 
 // Option configures the audit sink.
@@ -27,10 +27,10 @@ type Config struct {
 	BackendConfigs []backends.Config
 
 	// Resilience
-	FailureHandler FailureHandler
-	RetryPolicy    RetryPolicy
+	FailureHandler        FailureHandler
+	RetryPolicy           RetryPolicy
 	CircuitBreakerOptions []interface{} // Placeholder for resilience.Option
-	PanicOnFailure bool
+	PanicOnFailure        bool
 
 	// Performance
 	GroupCommit      bool
@@ -129,6 +129,7 @@ func WithBackend(backend backends.Config) Option {
 }
 
 // WithGroupCommit enables group commit for better throughput.
+// This automatically sets the WAL to use batch sync mode for performance.
 func WithGroupCommit(size int, delay time.Duration) Option {
 	return func(c *Config) error {
 		if size <= 0 {
@@ -140,6 +141,8 @@ func WithGroupCommit(size int, delay time.Duration) Option {
 		c.GroupCommit = true
 		c.GroupCommitSize = size
 		c.GroupCommitDelay = delay
+		// Automatically set WAL to batch sync mode for performance
+		c.WALOptions = append(c.WALOptions, wal.WithSyncMode(wal.SyncBatch))
 		return nil
 	}
 }

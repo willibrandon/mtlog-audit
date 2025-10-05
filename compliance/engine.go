@@ -31,39 +31,39 @@ func New(profileName string, opts ...Option) (*Engine, error) {
 	if !exists {
 		return nil, fmt.Errorf("unknown compliance profile: %s", profileName)
 	}
-	
+
 	engine := &Engine{
 		profile:         profile,
 		maskSensitive:   true,
 		enforceRequired: true,
 	}
-	
+
 	// Apply options
 	for _, opt := range opts {
 		if err := opt(engine); err != nil {
 			return nil, err
 		}
 	}
-	
+
 	// Initialize encryption if required
 	if profile.EncryptionRequired && engine.encryptor == nil {
 		key, err := GenerateKey(256)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate encryption key: %w", err)
 		}
-		
+
 		keyManager, err := NewKeyManager(key, profile.EncryptionAlgorithm)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create key manager: %w", err)
 		}
 		engine.keyManager = keyManager
 	}
-	
+
 	// Initialize signing if required
 	if profile.SigningRequired && engine.signer == nil {
 		var signer Signer
 		var err error
-		
+
 		switch profile.SigningAlgorithm {
 		case "Ed25519":
 			signer, err = NewEd25519Signer()
@@ -72,15 +72,15 @@ func New(profileName string, opts ...Option) (*Engine, error) {
 		default:
 			return nil, fmt.Errorf("unsupported signing algorithm: %s", profile.SigningAlgorithm)
 		}
-		
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to create signer: %w", err)
 		}
-		
+
 		engine.signer = signer
 		engine.signatureChain = NewSignatureChain(signer)
 	}
-	
+
 	return engine, nil
 }
 
@@ -93,7 +93,7 @@ func WithEncryptionKey(key []byte) Option {
 		if !e.profile.EncryptionRequired {
 			return nil // Ignore if not required
 		}
-		
+
 		keyManager, err := NewKeyManager(key, e.profile.EncryptionAlgorithm)
 		if err != nil {
 			return err
@@ -109,7 +109,7 @@ func WithSigner(signer Signer) Option {
 		if !e.profile.SigningRequired {
 			return nil // Ignore if not required
 		}
-		
+
 		e.signer = signer
 		e.signatureChain = NewSignatureChain(signer)
 		return nil
@@ -128,11 +128,11 @@ func WithMaskingDisabled() Option {
 func WithRetentionDays(days int) Option {
 	return func(e *Engine) error {
 		if days < e.profile.MinRetentionDays {
-			return fmt.Errorf("retention days %d is less than minimum %d for profile %s", 
+			return fmt.Errorf("retention days %d is less than minimum %d for profile %s",
 				days, e.profile.MinRetentionDays, e.profile.Name)
 		}
 		if days > e.profile.MaxRetentionDays {
-			return fmt.Errorf("retention days %d exceeds maximum %d for profile %s", 
+			return fmt.Errorf("retention days %d exceeds maximum %d for profile %s",
 				days, e.profile.MaxRetentionDays, e.profile.Name)
 		}
 		e.profile.RetentionDays = days
@@ -144,25 +144,25 @@ func WithRetentionDays(days int) Option {
 func (e *Engine) Transform(event *core.LogEvent) *core.LogEvent {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	
+
 	// Clone the event to avoid modifying the original
 	transformed := e.cloneEvent(event)
-	
+
 	// Add required audit properties
 	e.addRequiredProperties(transformed)
-	
+
 	// Mask sensitive data if enabled
 	if e.maskSensitive && len(e.profile.MaskSensitive) > 0 {
 		e.maskSensitiveData(transformed)
 	}
-	
+
 	// Add compliance metadata
 	if transformed.Properties == nil {
 		transformed.Properties = make(map[string]interface{})
 	}
 	transformed.Properties["_compliance_profile"] = e.profile.Name
 	transformed.Properties["_compliance_sequence"] = atomic.AddUint64(&e.sequence, 1)
-	
+
 	return transformed
 }
 
@@ -170,19 +170,19 @@ func (e *Engine) Transform(event *core.LogEvent) *core.LogEvent {
 func (e *Engine) ProcessForStorage(event *core.LogEvent) (*ComplianceRecord, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	
+
 	// Serialize the event
 	eventData, err := json.Marshal(event)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize event: %w", err)
 	}
-	
+
 	record := &ComplianceRecord{
 		Timestamp: event.Timestamp,
 		Profile:   e.profile.Name,
 		Sequence:  atomic.AddUint64(&e.sequence, 1),
 	}
-	
+
 	// Encrypt if required
 	if e.profile.EncryptionRequired && e.keyManager != nil {
 		encrypted, err := e.keyManager.Encrypt(eventData)
@@ -194,7 +194,7 @@ func (e *Engine) ProcessForStorage(event *core.LogEvent) (*ComplianceRecord, err
 	} else {
 		record.PlainData = eventData
 	}
-	
+
 	// Sign if required
 	if e.profile.SigningRequired && e.signatureChain != nil {
 		sig, err := e.signatureChain.Sign(record.Sequence, eventData)
@@ -204,7 +204,7 @@ func (e *Engine) ProcessForStorage(event *core.LogEvent) (*ComplianceRecord, err
 		record.Signed = true
 		record.Signature = sig
 	}
-	
+
 	return record, nil
 }
 
@@ -212,14 +212,14 @@ func (e *Engine) ProcessForStorage(event *core.LogEvent) (*ComplianceRecord, err
 func (e *Engine) VerifyRecord(record *ComplianceRecord) error {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	// Get the original data
 	var eventData []byte
 	if record.Encrypted {
 		if e.keyManager == nil {
 			return fmt.Errorf("no key manager available for decryption")
 		}
-		
+
 		plaintext, err := e.keyManager.Decrypt(record.EncryptedData)
 		if err != nil {
 			return fmt.Errorf("decryption failed: %w", err)
@@ -228,30 +228,30 @@ func (e *Engine) VerifyRecord(record *ComplianceRecord) error {
 	} else {
 		eventData = record.PlainData
 	}
-	
+
 	// Verify signature if present
 	if record.Signed && record.Signature != nil {
 		if e.signer == nil {
 			return fmt.Errorf("no signer available for verification")
 		}
-		
+
 		// Recreate chain data for verification
 		chainData := make([]byte, len(record.Signature.PrevHash)+len(record.Signature.DataHash)+8)
 		copy(chainData, record.Signature.PrevHash)
 		copy(chainData[len(record.Signature.PrevHash):], record.Signature.DataHash)
 		for i := 0; i < 8; i++ {
-			chainData[len(record.Signature.PrevHash)+len(record.Signature.DataHash)+i] = 
+			chainData[len(record.Signature.PrevHash)+len(record.Signature.DataHash)+i] =
 				byte(record.Signature.Sequence >> (8 * i))
 		}
-		
+
 		if err := e.signer.Verify(chainData, record.Signature.Signature); err != nil {
 			return fmt.Errorf("signature verification failed: %w", err)
 		}
 	}
-	
+
 	// Validate the event data if needed
 	_ = eventData // Mark as used for validation
-	
+
 	return nil
 }
 
@@ -259,16 +259,16 @@ func (e *Engine) VerifyRecord(record *ComplianceRecord) error {
 func (e *Engine) VerifyChain() (*ChainVerificationReport, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	if e.signatureChain == nil {
 		return nil, fmt.Errorf("no signature chain available")
 	}
-	
+
 	report := &ChainVerificationReport{
 		Timestamp: time.Now(),
 		Profile:   e.profile.Name,
 	}
-	
+
 	if err := e.signatureChain.Verify(); err != nil {
 		report.Valid = false
 		report.Error = err.Error()
@@ -277,7 +277,7 @@ func (e *Engine) VerifyChain() (*ChainVerificationReport, error) {
 		report.TotalSignatures = len(e.signatureChain.signatures)
 		report.LastSequence = e.sequence
 	}
-	
+
 	return report, nil
 }
 
@@ -289,7 +289,7 @@ func (e *Engine) cloneEvent(event *core.LogEvent) *core.LogEvent {
 		MessageTemplate: event.MessageTemplate,
 		Exception:       event.Exception,
 	}
-	
+
 	// Deep copy properties
 	if event.Properties != nil {
 		cloned.Properties = make(map[string]interface{})
@@ -297,7 +297,7 @@ func (e *Engine) cloneEvent(event *core.LogEvent) *core.LogEvent {
 			cloned.Properties[k] = v
 		}
 	}
-	
+
 	return cloned
 }
 
@@ -306,12 +306,12 @@ func (e *Engine) addRequiredProperties(event *core.LogEvent) {
 	if event.Properties == nil {
 		event.Properties = make(map[string]interface{})
 	}
-	
+
 	// Add timestamp if not present
 	if _, exists := event.Properties["Timestamp"]; !exists {
 		event.Properties["Timestamp"] = event.Timestamp.Format(time.RFC3339Nano)
 	}
-	
+
 	// Check for required properties and add placeholders if missing
 	for _, prop := range e.profile.AuditProperties {
 		if _, exists := event.Properties[prop]; !exists && e.enforceRequired {
@@ -326,7 +326,7 @@ func (e *Engine) maskSensitiveData(event *core.LogEvent) {
 	if event.Properties == nil {
 		return
 	}
-	
+
 	for key, value := range event.Properties {
 		if e.isSensitiveField(key) {
 			// Mask the value while preserving type information
@@ -344,26 +344,26 @@ func (e *Engine) maskSensitiveData(event *core.LogEvent) {
 			}
 		}
 	}
-	
+
 	// Also check message template for sensitive data
 	if event.MessageTemplate != "" {
 		maskedText := event.MessageTemplate
-		
+
 		// Define regex patterns for common sensitive data
 		patterns := map[string]*regexp.Regexp{
-			"SSN":         regexp.MustCompile(`\b\d{3}-?\d{2}-?\d{4}\b`),
-			"CREDITCARD":  regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`),
-			"EMAIL":       regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`),
-			"PHONE":       regexp.MustCompile(`\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`),
-			"IP":          regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`),
-			"MRN":         regexp.MustCompile(`\b[A-Z]{2}\d{6,8}\b`), // Medical Record Number
-			"PAN":         regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`), // Payment card
+			"SSN":        regexp.MustCompile(`\b\d{3}-?\d{2}-?\d{4}\b`),
+			"CREDITCARD": regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`),
+			"EMAIL":      regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`),
+			"PHONE":      regexp.MustCompile(`\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`),
+			"IP":         regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`),
+			"MRN":        regexp.MustCompile(`\b[A-Z]{2}\d{6,8}\b`),                        // Medical Record Number
+			"PAN":        regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`), // Payment card
 		}
-		
+
 		// Apply regex patterns based on profile requirements
 		for _, sensitive := range e.profile.MaskSensitive {
 			sensitiveUpper := strings.ToUpper(sensitive)
-			
+
 			// Use regex if we have a pattern for this type
 			if pattern, ok := patterns[sensitiveUpper]; ok {
 				maskedText = pattern.ReplaceAllString(maskedText, "[REDACTED]")
@@ -373,7 +373,7 @@ func (e *Engine) maskSensitiveData(event *core.LogEvent) {
 				maskedText = re.ReplaceAllString(maskedText, "[REDACTED]")
 			}
 		}
-		
+
 		event.MessageTemplate = maskedText
 	}
 }
@@ -402,14 +402,14 @@ func maskString(s string) string {
 
 // ComplianceRecord represents a processed event with compliance metadata
 type ComplianceRecord struct {
-	Timestamp     time.Time              `json:"timestamp"`
-	Profile       string                 `json:"profile"`
-	Sequence      uint64                 `json:"sequence"`
-	Encrypted     bool                   `json:"encrypted"`
-	Signed        bool                   `json:"signed"`
-	PlainData     []byte                 `json:"plain_data,omitempty"`
-	EncryptedData *EncryptedRecord       `json:"encrypted_data,omitempty"`
-	Signature     *ChainedSignature      `json:"signature,omitempty"`
+	Timestamp     time.Time         `json:"timestamp"`
+	Profile       string            `json:"profile"`
+	Sequence      uint64            `json:"sequence"`
+	Encrypted     bool              `json:"encrypted"`
+	Signed        bool              `json:"signed"`
+	PlainData     []byte            `json:"plain_data,omitempty"`
+	EncryptedData *EncryptedRecord  `json:"encrypted_data,omitempty"`
+	Signature     *ChainedSignature `json:"signature,omitempty"`
 }
 
 // ChainVerificationReport represents the result of chain verification

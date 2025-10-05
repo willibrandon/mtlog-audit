@@ -11,19 +11,19 @@ import (
 type Backend interface {
 	// Write writes an event to the backend
 	Write(event *core.LogEvent) error
-	
+
 	// WriteBatch writes multiple events efficiently
 	WriteBatch(events []*core.LogEvent) error
-	
+
 	// Read reads events within a time range
 	Read(start, end time.Time) ([]*core.LogEvent, error)
-	
+
 	// VerifyIntegrity verifies the integrity of stored data
 	VerifyIntegrity() (*IntegrityReport, error)
-	
+
 	// Name returns the backend name
 	Name() string
-	
+
 	// Close closes the backend
 	Close() error
 }
@@ -55,12 +55,12 @@ type Config interface {
 
 // FilesystemConfig configures a filesystem backend
 type FilesystemConfig struct {
-	Path      string        `json:"path"`
-	SyncMode  SyncMode      `json:"sync_mode"`
-	MaxSize   int64         `json:"max_size"`   // Max file size before rotation
-	MaxAge    time.Duration `json:"max_age"`    // Max age before rotation
-	Compress  bool          `json:"compress"`   // Compress rotated files
-	Shadow    bool          `json:"shadow"`     // Shadow copy for redundancy
+	Path     string        `json:"path"`
+	SyncMode SyncMode      `json:"sync_mode"`
+	MaxSize  int64         `json:"max_size"` // Max file size before rotation
+	MaxAge   time.Duration `json:"max_age"`  // Max age before rotation
+	Compress bool          `json:"compress"` // Compress rotated files
+	Shadow   bool          `json:"shadow"`   // Shadow copy for redundancy
 }
 
 func (c FilesystemConfig) Type() string {
@@ -82,14 +82,14 @@ func (c FilesystemConfig) Validate() error {
 
 // S3Config configures an S3 backend
 type S3Config struct {
-	Bucket          string        `json:"bucket"`
-	Region          string        `json:"region"`
-	Prefix          string        `json:"prefix"`
-	StorageClass    string        `json:"storage_class"`
-	ServerSideEncryption bool     `json:"server_side_encryption"`
-	Versioning      bool          `json:"versioning"`
-	ObjectLock      bool          `json:"object_lock"`
-	RetentionDays   int           `json:"retention_days"`
+	Bucket               string `json:"bucket"`
+	Region               string `json:"region"`
+	Prefix               string `json:"prefix"`
+	StorageClass         string `json:"storage_class"`
+	ServerSideEncryption bool   `json:"server_side_encryption"`
+	Versioning           bool   `json:"versioning"`
+	ObjectLock           bool   `json:"object_lock"`
+	RetentionDays        int    `json:"retention_days"`
 }
 
 func (c S3Config) Type() string {
@@ -108,12 +108,12 @@ func (c S3Config) Validate() error {
 
 // AzureConfig configures an Azure Blob Storage backend
 type AzureConfig struct {
-	Container        string        `json:"container"`
-	ConnectionString string        `json:"connection_string"`
-	Prefix           string        `json:"prefix"`
-	AccessTier       string        `json:"access_tier"`
-	Immutable        bool          `json:"immutable"`
-	RetentionDays    int           `json:"retention_days"`
+	Container        string `json:"container"`
+	ConnectionString string `json:"connection_string"`
+	Prefix           string `json:"prefix"`
+	AccessTier       string `json:"access_tier"`
+	Immutable        bool   `json:"immutable"`
+	RetentionDays    int    `json:"retention_days"`
 }
 
 func (c AzureConfig) Type() string {
@@ -132,14 +132,14 @@ func (c AzureConfig) Validate() error {
 
 // GCSConfig configures a Google Cloud Storage backend
 type GCSConfig struct {
-	Bucket          string        `json:"bucket"`
-	ProjectID       string        `json:"project_id"`
-	Prefix          string        `json:"prefix"`
-	StorageClass    string        `json:"storage_class"`
-	RetentionDays   int           `json:"retention_days"`
-	Region          string        `json:"region"`
-	CredentialsFile string        `json:"credentials_file"`
-	Versioning      bool          `json:"versioning"`
+	Bucket          string `json:"bucket"`
+	ProjectID       string `json:"project_id"`
+	Prefix          string `json:"prefix"`
+	StorageClass    string `json:"storage_class"`
+	RetentionDays   int    `json:"retention_days"`
+	Region          string `json:"region"`
+	CredentialsFile string `json:"credentials_file"`
+	Versioning      bool   `json:"versioning"`
 }
 
 func (c GCSConfig) Type() string {
@@ -173,7 +173,7 @@ func Create(config Config) (Backend, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
-	
+
 	switch cfg := config.(type) {
 	case FilesystemConfig:
 		return NewFilesystemBackend(cfg)

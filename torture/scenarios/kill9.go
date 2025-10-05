@@ -129,7 +129,7 @@ func (k *Kill9DuringWrite) Verify(dir string) error {
 	// 1. All records can be parsed correctly
 	// 2. No partial records exist (parsing would fail)
 	// 3. Hash chain is valid for all complete records
-	
+
 	// Additional verification: ensure we got approximately the right number
 	// We should have written at least killAfter events (with some margin for timing)
 	killAfter := k.KillAfter
@@ -138,7 +138,7 @@ func (k *Kill9DuringWrite) Verify(dir string) error {
 		min := k.EventCount / 10
 		killAfter = min // Use minimum as conservative estimate
 	}
-	
+
 	// Allow some margin for async writes
 	if report.TotalRecords < killAfter/2 {
 		return fmt.Errorf("too few records: expected at least %d, got %d", killAfter/2, report.TotalRecords)

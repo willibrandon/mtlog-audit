@@ -40,7 +40,7 @@ func (d *DiskFull) Execute(sink *audit.Sink, dir string) error {
 		if min >= max {
 			min = max - 1
 		}
-		fillAt = min + int(time.Now().UnixNano() % int64(max-min+1))
+		fillAt = min + int(time.Now().UnixNano()%int64(max-min+1))
 	}
 
 	// Write events and simulate disk full
@@ -167,7 +167,7 @@ func (d *DiskFull) simulateDiskFull(filePath string) error {
 	// Write in chunks to fill the disk
 	chunkSize := uint64(1024 * 1024) // 1MB chunks
 	chunk := make([]byte, chunkSize)
-	
+
 	// Fill chunk with non-zero data to ensure it actually uses disk space
 	// (some filesystems optimize away zero-filled files)
 	for i := range chunk {

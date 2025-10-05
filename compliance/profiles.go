@@ -58,8 +58,8 @@ var Profiles = map[string]Profile{
 		EncryptionAlgorithm: "AES-256-GCM",
 		SigningRequired:     true,
 		SigningAlgorithm:    "RSA-PSS",
-		RetentionDays:       365, // 1 year default
-		MinRetentionDays:    365, // 1 year minimum
+		RetentionDays:       365,  // 1 year default
+		MinRetentionDays:    365,  // 1 year minimum
 		MaxRetentionDays:    2555, // 7 years maximum
 		MaskSensitive: []string{
 			"PAN", "pan", "CardNumber", "card_number",

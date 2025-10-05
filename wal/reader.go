@@ -185,10 +185,10 @@ func (r *Reader) ReadNext() (*core.LogEvent, error) {
 	}
 
 	// Update offset
-	headerSize := 4 + 2 + 2 + 4 + 8 + 4 // magic + version + flags + length + timestamp + crc32
+	headerSize := 4 + 2 + 2 + 4 + 8 + 4         // magic + version + flags + length + timestamp + crc32
 	payloadSize := 8 + 32 + int(length) + 4 + 4 // sequence + prevHash + eventData + crc32Data + magicEnd
 	r.offset += int64(headerSize + payloadSize)
-	
+
 	return &event, nil
 }
 

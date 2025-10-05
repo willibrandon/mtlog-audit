@@ -9,7 +9,7 @@ import (
 
 func TestComplianceProfiles(t *testing.T) {
 	profiles := []string{"HIPAA", "PCI-DSS", "SOX", "GDPR"}
-	
+
 	for _, profileName := range profiles {
 		t.Run(profileName, func(t *testing.T) {
 			profile, ok := GetProfile(profileName)
@@ -23,11 +23,11 @@ func TestComplianceProfiles(t *testing.T) {
 
 			// Verify retention days are within bounds
 			if profile.RetentionDays < profile.MinRetentionDays {
-				t.Errorf("RetentionDays %d < MinRetentionDays %d", 
+				t.Errorf("RetentionDays %d < MinRetentionDays %d",
 					profile.RetentionDays, profile.MinRetentionDays)
 			}
 			if profile.RetentionDays > profile.MaxRetentionDays {
-				t.Errorf("RetentionDays %d > MaxRetentionDays %d", 
+				t.Errorf("RetentionDays %d > MaxRetentionDays %d",
 					profile.RetentionDays, profile.MaxRetentionDays)
 			}
 		})
@@ -77,7 +77,7 @@ func TestComplianceEngine(t *testing.T) {
 
 func TestEncryption(t *testing.T) {
 	key := []byte("test-key-32-bytes-long-exactly!!")
-	
+
 	engine, err := New(
 		"HIPAA",
 		WithEncryptionKey(key),
@@ -104,7 +104,7 @@ func TestEncryption(t *testing.T) {
 	if record.EncryptedData == nil {
 		t.Error("Encrypted data is nil")
 	}
-	
+
 	if record.EncryptedData != nil && len(record.EncryptedData.Ciphertext) == 0 {
 		t.Error("Event was not encrypted")
 	}
@@ -144,7 +144,7 @@ func TestRetentionDaysOption(t *testing.T) {
 		t.Error("Expected error for retention below minimum")
 	}
 
-	// Test retention above maximum  
+	// Test retention above maximum
 	_, err = New(
 		"HIPAA",
 		WithRetentionDays(5000), // Above HIPAA maximum

@@ -41,5 +41,5 @@ dist/
 torture-results/
 torture-report.html
 
-# Claude settings
-.claude/settings.local.json
+# Claude files
+.claude/*

@@ -20,7 +20,7 @@ func TestTorture(t *testing.T) {
 	} else {
 		iterations = 1000 // Standard test run
 	}
-	
+
 	cfg := Config{
 		Iterations:    iterations,
 		StopOnFailure: false,

@@ -30,11 +30,11 @@ type Scenario interface {
 
 // Config configures the torture test suite.
 type Config struct {
-	Iterations     int
-	StopOnFailure  bool
-	TempDir        string
-	Concurrency    int
-	Verbose        bool
+	Iterations    int
+	StopOnFailure bool
+	TempDir       string
+	Concurrency   int
+	Verbose       bool
 }
 
 // Report contains the results of a torture test run.
@@ -117,30 +117,30 @@ func (s *Suite) RunParallel(workers int) (*Report, error) {
 	if workers <= 0 {
 		workers = runtime.NumCPU()
 	}
-	
+
 	logger.Log.Info("Running parallel torture test with {workers} workers", workers)
-	
+
 	report := &Report{
 		StartTime:  time.Now(),
 		Iterations: s.config.Iterations,
 		Scenarios:  make(map[string]*ScenarioResult),
 	}
-	
+
 	// Initialize results
 	for _, scenario := range s.scenarios {
 		report.Scenarios[scenario.Name()] = &ScenarioResult{}
 	}
-	
+
 	// Work queue
 	type work struct {
 		scenario  Scenario
 		iteration int
 	}
 	workChan := make(chan work, workers*2)
-	
+
 	// Progress tracking
 	var completed int64
-	
+
 	// Start workers
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {
@@ -149,17 +149,17 @@ func (s *Suite) RunParallel(workers int) (*Report, error) {
 			defer wg.Done()
 			for w := range workChan {
 				s.runScenarioParallel(w.scenario, report, w.iteration, workerID)
-				
+
 				// Progress reporting
 				current := atomic.AddInt64(&completed, 1)
 				if current%100 == 0 {
-					logger.Log.Info("Progress: {current}/{total} scenario runs completed", 
+					logger.Log.Info("Progress: {current}/{total} scenario runs completed",
 						current, s.config.Iterations*len(s.scenarios))
 				}
 			}
 		}(w)
 	}
-	
+
 	// Queue work
 	for i := 0; i < s.config.Iterations; i++ {
 		for _, scenario := range s.scenarios {
@@ -170,7 +170,7 @@ func (s *Suite) RunParallel(workers int) (*Report, error) {
 				time.Sleep(10 * time.Millisecond)
 				workChan <- work{scenario: scenario, iteration: i}
 			}
-			
+
 			// Check for early termination on failure
 			if s.config.StopOnFailure {
 				for _, result := range report.Scenarios {
@@ -188,13 +188,13 @@ func (s *Suite) RunParallel(workers int) (*Report, error) {
 		}
 	}
 	close(workChan)
-	
+
 	// Wait for completion
 	wg.Wait()
-	
+
 	report.EndTime = time.Now()
 	report.Success = s.calculateSuccess(report)
-	
+
 	return report, nil
 }
 
@@ -202,11 +202,11 @@ func (s *Suite) RunParallel(workers int) (*Report, error) {
 func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration int, workerID int) {
 	result := report.Scenarios[scenario.Name()]
 	startTime := time.Now()
-	
+
 	// Create isolated test directory with worker ID to avoid conflicts
-	dir := fmt.Sprintf("%s/torture-w%d-i%d-%d", 
+	dir := fmt.Sprintf("%s/torture-w%d-i%d-%d",
 		s.config.TempDir, workerID, iteration, time.Now().UnixNano())
-	
+
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		result.mu.Lock()
 		result.Failed++
@@ -215,7 +215,7 @@ func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration
 		return
 	}
 	defer os.RemoveAll(dir)
-	
+
 	// Create sink with batch sync for performance
 	sink, err := audit.New(
 		audit.WithWAL(filepath.Join(dir, "test.wal")),
@@ -228,7 +228,7 @@ func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration
 		result.mu.Unlock()
 		return
 	}
-	
+
 	// Execute scenario
 	if err := scenario.Execute(sink, dir); err != nil {
 		result.mu.Lock()
@@ -238,10 +238,10 @@ func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration
 		sink.Close()
 		return
 	}
-	
+
 	// Close sink (simulates crash/shutdown)
 	sink.Close()
-	
+
 	// Verify results
 	if err := scenario.Verify(dir); err != nil {
 		result.mu.Lock()
@@ -250,7 +250,7 @@ func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration
 		result.mu.Unlock()
 		return
 	}
-	
+
 	// Success
 	result.mu.Lock()
 	result.Passed++

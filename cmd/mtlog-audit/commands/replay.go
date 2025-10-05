@@ -111,7 +111,7 @@ func runReplay(walPath, startTimeStr, endTimeStr, format, output string) error {
 	// First, just verify integrity without creating a full sink
 	// We'll read directly from the WAL file for replay
 	fmt.Printf("🔍 Verifying WAL integrity...")
-	
+
 	// Create a temporary sink just for verification
 	verifySink, err := audit.New(
 		audit.WithWAL(walPath),
@@ -119,19 +119,19 @@ func runReplay(walPath, startTimeStr, endTimeStr, format, output string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open WAL: %w", err)
 	}
-	
+
 	report, err := verifySink.VerifyIntegrity()
 	if err != nil {
 		fmt.Printf(" ❌\n")
 		return fmt.Errorf("WAL integrity verification failed: %w", err)
 	}
-	
+
 	if !report.Valid {
 		fmt.Printf(" ⚠️  Warning: WAL has integrity issues\n")
 		fmt.Printf("   - Total records: %d\n", report.TotalRecords)
 		fmt.Printf("   - Corrupted segments: %d\n", report.CorruptedSegments)
 		fmt.Print("Continue anyway? (y/N): ")
-		
+
 		var response string
 		fmt.Scanln(&response)
 		if response != "y" && response != "Y" {
@@ -229,7 +229,7 @@ func outputText(events []*core.LogEvent, outputFile string) error {
 		fmt.Fprintf(writer, "[%s] [%s] %s\n",
 			event.Timestamp.Format(time.RFC3339),
 			levelStr,
-			event.MessageTemplate)
+			event.RenderMessage()) // Properly render message with properties
 
 		if len(event.Properties) > 0 {
 			for k, v := range event.Properties {
@@ -268,7 +268,7 @@ func outputCSV(events []*core.LogEvent, outputFile string) error {
 		record := []string{
 			event.Timestamp.Format(time.RFC3339),
 			levelStr,
-			event.MessageTemplate,
+			event.RenderMessage(), // Properly render message with properties
 			string(props),
 		}
 		if err := csvWriter.Write(record); err != nil {

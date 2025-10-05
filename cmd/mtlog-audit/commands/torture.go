@@ -77,13 +77,13 @@ Examples:
 			// Run the torture tests
 			var report *torture.Report
 			var err error
-			
+
 			if parallel > 1 {
 				report, err = suite.RunParallel(parallel)
 			} else {
 				report, err = suite.Run()
 			}
-			
+
 			if err != nil && !stopOnFailure {
 				return fmt.Errorf("torture test failed: %w", err)
 			}

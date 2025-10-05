@@ -14,10 +14,10 @@ import (
 
 func monitorCmd() *cobra.Command {
 	var (
-		walPath       string
-		checkInterval string
+		walPath        string
+		checkInterval  string
 		alertThreshold int
-		output        string
+		output         string
 	)
 
 	cmd := &cobra.Command{
@@ -123,7 +123,7 @@ func runMonitor(walPath, intervalStr string, threshold int, output string) error
 
 func performCheck(walPath string, lastSize, lastSequence *uint64, errorCount *int, lastCheck *time.Time, threshold int) error {
 	now := time.Now()
-	
+
 	// Try to create audit sink to access WAL
 	sink, err := audit.New(
 		audit.WithWAL(walPath),
@@ -159,7 +159,7 @@ func performCheck(walPath string, lastSize, lastSequence *uint64, errorCount *in
 	if !lastCheck.IsZero() {
 		elapsed := now.Sub(*lastCheck).Seconds()
 		if elapsed > 0 {
-			growthRate = float64(sizeGrowth) / elapsed // bytes per second
+			growthRate = float64(sizeGrowth) / elapsed     // bytes per second
 			recordRate = float64(sequenceGrowth) / elapsed // records per second
 		}
 	}

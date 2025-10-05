@@ -12,27 +12,27 @@ import (
 // DoubleWriteBuffer implements torn-write protection using a journal
 // It ensures that writes are atomic even if the process crashes mid-write
 type DoubleWriteBuffer struct {
-	mu          sync.Mutex
-	journal     *os.File
-	bufferSize  int
-	crcTable    *crc32.Table
+	mu         sync.Mutex
+	journal    *os.File
+	bufferSize int
+	crcTable   *crc32.Table
 }
 
 // JournalEntry represents a write that needs to be made atomic
 type JournalEntry struct {
-	Magic      uint32   // Magic number to identify valid entries
-	Status     uint8    // 0 = incomplete, 1 = complete, 2 = applied
-	Position   int64    // Position in the main WAL file
-	Length     uint32   // Length of the data
-	CRC32      uint32   // CRC32 of the data
-	Data       []byte   // The actual data to write
+	Magic    uint32 // Magic number to identify valid entries
+	Status   uint8  // 0 = incomplete, 1 = complete, 2 = applied
+	Position int64  // Position in the main WAL file
+	Length   uint32 // Length of the data
+	CRC32    uint32 // CRC32 of the data
+	Data     []byte // The actual data to write
 }
 
 const (
-	JournalMagic       = 0x4A524E4C // "JRNL"
-	StatusIncomplete   = 0
-	StatusComplete     = 1
-	StatusApplied      = 2
+	JournalMagic     = 0x4A524E4C // "JRNL"
+	StatusIncomplete = 0
+	StatusComplete   = 1
+	StatusApplied    = 2
 )
 
 // NewDoubleWriteBuffer creates a new double-write buffer
@@ -45,7 +45,8 @@ func NewDoubleWriteBuffer(journal *os.File, bufferSize int) (*DoubleWriteBuffer,
 }
 
 // WriteToJournal writes data to the journal for torn-write protection
-func (d *DoubleWriteBuffer) WriteToJournal(data []byte, position int64) error {
+// The needsSync parameter controls whether to sync immediately (for durability)
+func (d *DoubleWriteBuffer) WriteToJournal(data []byte, position int64, needsSync bool) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -84,12 +85,16 @@ func (d *DoubleWriteBuffer) WriteToJournal(data []byte, position int64) error {
 		return fmt.Errorf("incomplete write: wrote %d of %d bytes", n, len(data))
 	}
 
-	// Sync immediately for durability
-	return d.journal.Sync()
+	// Sync only if needed (controlled by sync mode)
+	if needsSync {
+		return d.journal.Sync()
+	}
+	return nil
 }
 
 // MarkComplete marks the last journal entry as complete
-func (d *DoubleWriteBuffer) MarkComplete() error {
+// The needsSync parameter controls whether to sync immediately (for durability)
+func (d *DoubleWriteBuffer) MarkComplete(needsSync bool) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -108,8 +113,11 @@ func (d *DoubleWriteBuffer) MarkComplete() error {
 		return fmt.Errorf("failed to seek to end: %w", err)
 	}
 
-	// Sync to ensure status update is durable
-	return d.journal.Sync()
+	// Sync only if needed (controlled by sync mode)
+	if needsSync {
+		return d.journal.Sync()
+	}
+	return nil
 }
 
 // MarkIncomplete marks the last journal entry as incomplete
@@ -221,11 +229,11 @@ func (d *DoubleWriteBuffer) Clear() error {
 func (d *DoubleWriteBuffer) getLastEntrySize() int64 {
 	// Get current position
 	currentPos, _ := d.journal.Seek(0, 1)
-	
+
 	// Seek to beginning to scan
 	d.journal.Seek(0, 0)
 	defer d.journal.Seek(currentPos, 0)
-	
+
 	var lastEntrySize int64
 	for {
 		var magic uint32
@@ -235,29 +243,29 @@ func (d *DoubleWriteBuffer) getLastEntrySize() int64 {
 		if magic != JournalMagic {
 			break
 		}
-		
+
 		// Skip status
 		d.journal.Seek(1, 1)
-		
+
 		// Skip position
 		d.journal.Seek(8, 1)
-		
+
 		// Read length
 		var length uint32
 		if err := binary.Read(d.journal, binary.LittleEndian, &length); err != nil {
 			break
 		}
-		
+
 		// Skip CRC32
 		d.journal.Seek(4, 1)
-		
+
 		// Skip data
 		d.journal.Seek(int64(length), 1)
-		
+
 		// Calculate entry size: magic(4) + status(1) + position(8) + length(4) + crc32(4) + data(length)
 		lastEntrySize = 4 + 1 + 8 + 4 + 4 + int64(length)
 	}
-	
+
 	return lastEntrySize
 }
 
@@ -268,7 +276,7 @@ func (d *DoubleWriteBuffer) Compact() error {
 
 	// Read all entries
 	var validEntries []JournalEntry
-	
+
 	// Seek to beginning
 	if _, err := d.journal.Seek(0, 0); err != nil {
 		return fmt.Errorf("failed to seek to beginning: %w", err)

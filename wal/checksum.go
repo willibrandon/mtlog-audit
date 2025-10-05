@@ -54,7 +54,7 @@ type CRC32Checksum struct{}
 func (c *CRC32Checksum) Calculate(data []byte) uint64 {
 	state := checksumPool.Get().(*checksumState)
 	defer checksumPool.Put(state)
-	
+
 	state.crc32.Reset()
 	state.crc32.Write(data)
 	return uint64(state.crc32.Sum32())
@@ -75,7 +75,7 @@ type CRC32CChecksum struct{}
 func (c *CRC32CChecksum) Calculate(data []byte) uint64 {
 	state := checksumPool.Get().(*checksumState)
 	defer checksumPool.Put(state)
-	
+
 	state.crc32c.Reset()
 	state.crc32c.Write(data)
 	return uint64(state.crc32c.Sum32())
@@ -95,7 +95,7 @@ type CRC64Checksum struct{}
 func (c *CRC64Checksum) Calculate(data []byte) uint64 {
 	state := checksumPool.Get().(*checksumState)
 	defer checksumPool.Put(state)
-	
+
 	state.crc64.Reset()
 	state.crc64.Write(data)
 	return state.crc64.Sum64()
@@ -124,7 +124,6 @@ func (c *XXHash3Checksum) Verify(data []byte, expected uint64) bool {
 func (c *XXHash3Checksum) Name() string {
 	return "XXHash64"
 }
-
 
 // NewChecksum creates a checksum calculator for the specified type
 func NewChecksum(typ ChecksumType) Checksum {
@@ -195,7 +194,7 @@ type ChecksumError struct {
 
 func (e *ChecksumError) Error() string {
 	calculator := NewChecksum(e.Type)
-	return fmt.Sprintf("checksum mismatch (%s): expected %x, got %x", 
+	return fmt.Sprintf("checksum mismatch (%s): expected %x, got %x",
 		calculator.Name(), e.Expected, e.Actual)
 }
 
@@ -210,7 +209,7 @@ func (bc *BlockChecksum) CalculateBlocks(data []byte) []uint64 {
 	calculator := NewChecksum(bc.Type)
 	blocks := (len(data) + bc.BlockSize - 1) / bc.BlockSize
 	checksums := make([]uint64, blocks)
-	
+
 	for i := 0; i < blocks; i++ {
 		start := i * bc.BlockSize
 		end := start + bc.BlockSize
@@ -219,7 +218,7 @@ func (bc *BlockChecksum) CalculateBlocks(data []byte) []uint64 {
 		}
 		checksums[i] = calculator.Calculate(data[start:end])
 	}
-	
+
 	return checksums
 }
 
@@ -227,18 +226,18 @@ func (bc *BlockChecksum) CalculateBlocks(data []byte) []uint64 {
 func (bc *BlockChecksum) VerifyBlocks(data []byte, checksums []uint64) (int, error) {
 	calculator := NewChecksum(bc.Type)
 	blocks := (len(data) + bc.BlockSize - 1) / bc.BlockSize
-	
+
 	if len(checksums) != blocks {
 		return -1, fmt.Errorf("checksum count mismatch: expected %d, got %d", blocks, len(checksums))
 	}
-	
+
 	for i := 0; i < blocks; i++ {
 		start := i * bc.BlockSize
 		end := start + bc.BlockSize
 		if end > len(data) {
 			end = len(data)
 		}
-		
+
 		actual := calculator.Calculate(data[start:end])
 		if actual != checksums[i] {
 			return i, &ChecksumError{
@@ -248,7 +247,7 @@ func (bc *BlockChecksum) VerifyBlocks(data []byte, checksums []uint64) (int, err
 			}
 		}
 	}
-	
+
 	return -1, nil
 }
 
@@ -259,11 +258,11 @@ type RollingChecksum struct {
 	pos       int
 	sum       uint64
 	typ       ChecksumType
-	hasher    hash.Hash64  // Reusable hasher for CRC64
-	crc32Hash hash.Hash32  // Reusable hasher for CRC32
+	hasher    hash.Hash64 // Reusable hasher for CRC64
+	crc32Hash hash.Hash32 // Reusable hasher for CRC32
 	// For Adler32-style rolling checksum
-	a         uint32
-	b         uint32
+	a uint32
+	b uint32
 }
 
 // NewRollingChecksum creates a rolling checksum with specified window size
@@ -273,7 +272,7 @@ func NewRollingChecksum(windowSize int, typ ChecksumType) *RollingChecksum {
 		size:   windowSize,
 		typ:    typ,
 	}
-	
+
 	// Initialize hashers based on type
 	switch typ {
 	case ChecksumCRC32, ChecksumCRC32C:
@@ -285,11 +284,11 @@ func NewRollingChecksum(windowSize int, typ ChecksumType) *RollingChecksum {
 	case ChecksumCRC64:
 		rc.hasher = crc64.New(crc64.MakeTable(crc64.ISO))
 	}
-	
+
 	// Initialize Adler32-style components for rolling
 	rc.a = 1
 	rc.b = 0
-	
+
 	return rc
 }
 
@@ -299,7 +298,7 @@ func (rc *RollingChecksum) Update(b byte) uint64 {
 	rc.window[rc.pos] = b
 	oldPos := rc.pos
 	rc.pos = (rc.pos + 1) % rc.size
-	
+
 	switch rc.typ {
 	case ChecksumXXHash3:
 		// XXHash doesn't support incremental rolling, use Adler32-style rolling hash
@@ -307,7 +306,7 @@ func (rc *RollingChecksum) Update(b byte) uint64 {
 		rc.a = (rc.a - uint32(oldByte) + uint32(b)) % 65521
 		rc.b = (rc.b - uint32(rc.size)*uint32(oldByte) + rc.a - 1) % 65521
 		rc.sum = (uint64(rc.b) << 32) | uint64(rc.a)
-		
+
 	case ChecksumCRC32, ChecksumCRC32C:
 		// CRC32 requires full recalculation for rolling window
 		// But we can optimize by keeping the hasher state
@@ -318,7 +317,7 @@ func (rc *RollingChecksum) Update(b byte) uint64 {
 		}
 		rc.crc32Hash.Write(rc.window[:rc.pos])
 		rc.sum = uint64(rc.crc32Hash.Sum32())
-		
+
 	case ChecksumCRC64:
 		// Similar to CRC32, maintain hasher state
 		rc.hasher.Reset()
@@ -327,13 +326,13 @@ func (rc *RollingChecksum) Update(b byte) uint64 {
 		}
 		rc.hasher.Write(rc.window[:rc.pos])
 		rc.sum = rc.hasher.Sum64()
-		
+
 	default:
 		// Fallback to full recalculation
 		calculator := NewChecksum(rc.typ)
 		rc.sum = calculator.Calculate(rc.window)
 	}
-	
+
 	_ = oldPos // Keep for potential future optimizations
 	return rc.sum
 }

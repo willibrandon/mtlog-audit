@@ -46,11 +46,11 @@ This command checks:
 			} else {
 				logger.Log.Error("❌ Integrity check FAILED")
 			}
-			
+
 			logger.Log.Info("")
 			logger.Log.Info("Statistics:")
 			logger.Log.Info("  Total records: {count}", report.TotalRecords)
-			
+
 			if report.WALIntegrity != nil {
 				logger.Log.Info("  Last sequence: {seq}", report.WALIntegrity.LastSequence)
 				if report.WALIntegrity.CorruptedSegments > 0 {
@@ -60,7 +60,7 @@ This command checks:
 					logger.Log.Info("  Recovered records: {count}", report.WALIntegrity.RecoveredRecords)
 				}
 			}
-			
+
 			if len(report.BackendErrors) > 0 {
 				logger.Log.Error("Backend errors:")
 				for _, err := range report.BackendErrors {

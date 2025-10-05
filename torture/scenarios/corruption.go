@@ -15,7 +15,7 @@ import (
 // RandomCorruption simulates random data corruption during write operations.
 type RandomCorruption struct {
 	EventCount     int
-	CorruptAt      int // Corrupt data after N events (0 = random)
+	CorruptAt      int    // Corrupt data after N events (0 = random)
 	CorruptionType string // "bitflip", "truncate", "overwrite"
 }
 
@@ -76,7 +76,7 @@ func (r *RandomCorruption) Execute(sink *audit.Sink, dir string) error {
 			if i == corruptAt {
 				// Small delay to ensure data is written
 				time.Sleep(10 * time.Millisecond)
-				
+
 				// Corrupt the WAL file
 				if err := r.corruptWALFile(filepath.Join(dir, "test.wal")); err != nil {
 					select {
@@ -182,16 +182,16 @@ func (r *RandomCorruption) corruptWALFile(walPath string) error {
 func (r *RandomCorruption) corruptBitFlip(walPath string, data []byte) error {
 	// Flip 1-5 random bits
 	numBits := 1 + rand.Intn(5)
-	
+
 	for i := 0; i < numBits; i++ {
 		if len(data) == 0 {
 			break
 		}
-		
+
 		// Choose random byte and bit position
 		bytePos := rand.Intn(len(data))
 		bitPos := rand.Intn(8)
-		
+
 		// Flip the bit
 		data[bytePos] ^= (1 << bitPos)
 	}
@@ -204,10 +204,10 @@ func (r *RandomCorruption) corruptTruncate(walPath string, data []byte) error {
 	if len(data) <= 10 {
 		return nil // Too small to truncate meaningfully
 	}
-	
+
 	// Truncate somewhere in the last 50% of the file
 	truncateAt := len(data)/2 + rand.Intn(len(data)/2)
-	
+
 	return os.WriteFile(walPath, data[:truncateAt], 0600)
 }
 
@@ -216,22 +216,22 @@ func (r *RandomCorruption) corruptOverwrite(walPath string, data []byte) error {
 	if len(data) <= 20 {
 		return nil // Too small to overwrite meaningfully
 	}
-	
+
 	// Choose a random section to overwrite (up to 100 bytes)
 	maxSize := 100
 	if len(data) < maxSize {
 		maxSize = len(data) / 2
 	}
-	
+
 	overwriteSize := 1 + rand.Intn(maxSize)
 	startPos := rand.Intn(len(data) - overwriteSize)
-	
+
 	// Generate random data
 	randomData := make([]byte, overwriteSize)
 	rand.Read(randomData)
-	
+
 	// Overwrite the section
 	copy(data[startPos:startPos+overwriteSize], randomData)
-	
+
 	return os.WriteFile(walPath, data, 0600)
 }

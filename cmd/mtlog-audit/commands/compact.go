@@ -54,9 +54,9 @@ Examples:
 			var policy *wal.CompactionPolicy
 			if cmd.Flags().Changed("threshold") {
 				policy = &wal.CompactionPolicy{
-					MinSegments:       1, // Allow compacting even single segments
-					MaxSegmentAge:     time.Minute, // Lower age requirement  
-					MinSegmentSize:    1024, // 1KB minimum
+					MinSegments:       1,                // Allow compacting even single segments
+					MaxSegmentAge:     time.Minute,      // Lower age requirement
+					MinSegmentSize:    1024,             // 1KB minimum
 					TargetSegmentSize: 64 * 1024 * 1024, // 64MB target
 					CompactRatio:      threshold,
 				}
@@ -69,7 +69,7 @@ Examples:
 			// Get initial stats
 			stats := compactor.GetStats()
 			initialSize := calculateTotalSize(w)
-			
+
 			logger.Log.Info("Starting compaction on WAL: {path}", walPath)
 			logger.Log.Info("Initial size: {size} bytes", initialSize)
 
@@ -101,7 +101,6 @@ Examples:
 				return fmt.Errorf("compaction failed: %w", compactErr)
 			}
 
-
 			// Get final stats
 			finalStats := compactor.GetStats()
 			finalSize := calculateTotalSize(w)
@@ -111,7 +110,7 @@ Examples:
 			logger.Log.Info("Compaction complete!")
 			logger.Log.Info("Segments compacted: {count}", finalStats.SegmentsCompacted-stats.SegmentsCompacted)
 			logger.Log.Info("Bytes compacted: {bytes}", finalStats.BytesCompacted-stats.BytesCompacted)
-			logger.Log.Info("Space reclaimed: {bytes} bytes ({percent}%)", 
+			logger.Log.Info("Space reclaimed: {bytes} bytes ({percent}%)",
 				spaceSaved, (spaceSaved*100)/initialSize)
 			logger.Log.Info("Final size: {size} bytes", finalSize)
 
@@ -135,38 +134,38 @@ Examples:
 func performDryRun(compactor *wal.Compactor, w *wal.WAL) error {
 	// Get segments - for now we'll use a placeholder
 	segments := make([]*wal.Segment, 0)
-	
+
 	logger.Log.Info("Dry run: analyzing {count} segments", len(segments))
-	
+
 	compactableCount := 0
 	estimatedSavings := int64(0)
-	
+
 	for _, seg := range segments {
 		if !seg.Sealed {
 			logger.Log.Info("Segment {path}: ACTIVE (not compactable)", seg.Path)
 			continue
 		}
-		
+
 		// Calculate compaction ratio (simplified)
 		ratio := float64(seg.Size) / float64(1024*1024) // Simple ratio based on size
 		isCompactable := seg.Size > 0 && seg.Sealed
-		
+
 		if isCompactable {
 			compactableCount++
 			// Estimate savings (rough approximation)
 			estimatedSavings += int64(float64(seg.Size) * (1.0 - ratio))
-			logger.Log.Info("Segment {path}: COMPACTABLE (ratio: {ratio}, size: {size})", 
+			logger.Log.Info("Segment {path}: COMPACTABLE (ratio: {ratio}, size: {size})",
 				seg.Path, ratio, seg.Size)
 		} else {
-			logger.Log.Info("Segment {path}: NOT COMPACTABLE (ratio: {ratio}, size: {size})", 
+			logger.Log.Info("Segment {path}: NOT COMPACTABLE (ratio: {ratio}, size: {size})",
 				seg.Path, ratio, seg.Size)
 		}
 	}
-	
+
 	logger.Log.Info("Dry run complete:")
 	logger.Log.Info("  Compactable segments: {count}", compactableCount)
 	logger.Log.Info("  Estimated space savings: {bytes} bytes", estimatedSavings)
-	
+
 	return nil
 }
 
@@ -174,10 +173,10 @@ func performDryRun(compactor *wal.Compactor, w *wal.WAL) error {
 func calculateTotalSize(w *wal.WAL) int64 {
 	segments := w.GetSegments()
 	var totalSize int64
-	
+
 	for _, segment := range segments {
 		totalSize += segment.Size
 	}
-	
+
 	return totalSize
 }

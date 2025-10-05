@@ -174,7 +174,7 @@ func exportJSONL(events []*core.LogEvent, output string) error {
 	defer file.Close()
 
 	encoder := json.NewEncoder(file)
-	
+
 	// Write each event on a separate line
 	for _, event := range events {
 		if err := encoder.Encode(event); err != nil {
@@ -214,7 +214,7 @@ func exportCSV(events []*core.LogEvent, output string) error {
 	for _, event := range events {
 		// Marshal properties to JSON string
 		propsJSON, _ := json.Marshal(event.Properties)
-		
+
 		// Format exception
 		exceptionStr := ""
 		if event.Exception != nil {
@@ -225,11 +225,11 @@ func exportCSV(events []*core.LogEvent, output string) error {
 			event.Timestamp.Format(time.RFC3339Nano),
 			formatLevel(event.Level),
 			event.MessageTemplate,
-			event.MessageTemplate, // Use MessageTemplate as RenderedMessage for now
+			event.RenderMessage(), // Properly render message with properties
 			string(propsJSON),
 			exceptionStr,
 		}
-		
+
 		if err := writer.Write(record); err != nil {
 			return fmt.Errorf("failed to write CSV record: %w", err)
 		}
@@ -238,4 +238,3 @@ func exportCSV(events []*core.LogEvent, output string) error {
 	logger.Log.Info("Exported {count} events to {file}", len(events), output)
 	return nil
 }
-

@@ -32,17 +32,17 @@ func NewAESGCMEncryptor(key []byte) (*AESGCMEncryptor, error) {
 	if len(key) != 32 {
 		return nil, fmt.Errorf("AES-256 requires 32-byte key, got %d bytes", len(key))
 	}
-	
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
-	
+
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
-	
+
 	return &AESGCMEncryptor{
 		key:    key,
 		cipher: gcm,
@@ -53,13 +53,13 @@ func NewAESGCMEncryptor(key []byte) (*AESGCMEncryptor, error) {
 func (e *AESGCMEncryptor) Encrypt(plaintext []byte) ([]byte, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	// Generate nonce
 	nonce := make([]byte, e.cipher.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, fmt.Errorf("failed to generate nonce: %w", err)
 	}
-	
+
 	// Encrypt and append nonce to ciphertext
 	ciphertext := e.cipher.Seal(nonce, nonce, plaintext, nil)
 	return ciphertext, nil
@@ -69,21 +69,21 @@ func (e *AESGCMEncryptor) Encrypt(plaintext []byte) ([]byte, error) {
 func (e *AESGCMEncryptor) Decrypt(ciphertext []byte) ([]byte, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	nonceSize := e.cipher.NonceSize()
 	if len(ciphertext) < nonceSize {
 		return nil, fmt.Errorf("ciphertext too short")
 	}
-	
+
 	// Extract nonce
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	
+
 	// Decrypt
 	plaintext, err := e.cipher.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, fmt.Errorf("decryption failed: %w", err)
 	}
-	
+
 	return plaintext, nil
 }
 
@@ -102,15 +102,15 @@ type ChaCha20Poly1305Encryptor struct {
 // NewChaCha20Poly1305Encryptor creates a new ChaCha20-Poly1305 encryptor
 func NewChaCha20Poly1305Encryptor(key []byte) (*ChaCha20Poly1305Encryptor, error) {
 	if len(key) != chacha20poly1305.KeySize {
-		return nil, fmt.Errorf("ChaCha20-Poly1305 requires %d-byte key, got %d bytes", 
+		return nil, fmt.Errorf("ChaCha20-Poly1305 requires %d-byte key, got %d bytes",
 			chacha20poly1305.KeySize, len(key))
 	}
-	
+
 	cipher, err := chacha20poly1305.New(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ChaCha20-Poly1305 cipher: %w", err)
 	}
-	
+
 	return &ChaCha20Poly1305Encryptor{
 		key:    key,
 		cipher: cipher,
@@ -121,13 +121,13 @@ func NewChaCha20Poly1305Encryptor(key []byte) (*ChaCha20Poly1305Encryptor, error
 func (e *ChaCha20Poly1305Encryptor) Encrypt(plaintext []byte) ([]byte, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	// Generate nonce
 	nonce := make([]byte, e.cipher.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, fmt.Errorf("failed to generate nonce: %w", err)
 	}
-	
+
 	// Encrypt and append nonce to ciphertext
 	ciphertext := e.cipher.Seal(nonce, nonce, plaintext, nil)
 	return ciphertext, nil
@@ -137,21 +137,21 @@ func (e *ChaCha20Poly1305Encryptor) Encrypt(plaintext []byte) ([]byte, error) {
 func (e *ChaCha20Poly1305Encryptor) Decrypt(ciphertext []byte) ([]byte, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	nonceSize := e.cipher.NonceSize()
 	if len(ciphertext) < nonceSize {
 		return nil, fmt.Errorf("ciphertext too short")
 	}
-	
+
 	// Extract nonce
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	
+
 	// Decrypt
 	plaintext, err := e.cipher.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, fmt.Errorf("decryption failed: %w", err)
 	}
-	
+
 	return plaintext, nil
 }
 
@@ -165,14 +165,14 @@ func DeriveKey(password []byte, salt []byte, keyLen int) ([]byte, error) {
 	if len(salt) < 16 {
 		return nil, fmt.Errorf("salt must be at least 16 bytes")
 	}
-	
+
 	// Use scrypt for key derivation (NIST approved)
 	// N=32768 (2^15), r=8, p=1 are recommended parameters
 	key, err := scrypt.Key(password, salt, 32768, 8, 1, keyLen)
 	if err != nil {
 		return nil, fmt.Errorf("key derivation failed: %w", err)
 	}
-	
+
 	return key, nil
 }
 
@@ -190,7 +190,7 @@ func GenerateKey(bits int) ([]byte, error) {
 	if bits%8 != 0 {
 		return nil, fmt.Errorf("key size must be multiple of 8 bits")
 	}
-	
+
 	key := make([]byte, bits/8)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		return nil, fmt.Errorf("failed to generate key: %w", err)
@@ -200,11 +200,11 @@ func GenerateKey(bits int) ([]byte, error) {
 
 // EncryptedRecord wraps audit data with encryption metadata
 type EncryptedRecord struct {
-	Algorithm   string `json:"algorithm"`
-	Ciphertext  []byte `json:"ciphertext"`
-	KeyID       string `json:"key_id,omitempty"`
-	WrappedKey  []byte `json:"wrapped_key,omitempty"` // For key wrapping
-	Salt        []byte `json:"salt,omitempty"`        // For key derivation
+	Algorithm  string `json:"algorithm"`
+	Ciphertext []byte `json:"ciphertext"`
+	KeyID      string `json:"key_id,omitempty"`
+	WrappedKey []byte `json:"wrapped_key,omitempty"` // For key wrapping
+	Salt       []byte `json:"salt,omitempty"`        // For key derivation
 }
 
 // KeyManager manages encryption keys with rotation support
@@ -222,7 +222,7 @@ type KeyManager struct {
 func NewKeyManager(initialKey []byte, algorithm string) (*KeyManager, error) {
 	var encryptor Encryptor
 	var err error
-	
+
 	switch algorithm {
 	case "AES-256-GCM":
 		encryptor, err = NewAESGCMEncryptor(initialKey)
@@ -231,13 +231,13 @@ func NewKeyManager(initialKey []byte, algorithm string) (*KeyManager, error) {
 	default:
 		return nil, fmt.Errorf("unsupported algorithm: %s", algorithm)
 	}
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	keyID := generateKeyID(initialKey)
-	
+
 	return &KeyManager{
 		currentKey:  initialKey,
 		currentID:   keyID,
@@ -251,7 +251,7 @@ func NewKeyManager(initialKey []byte, algorithm string) (*KeyManager, error) {
 func (km *KeyManager) Encrypt(plaintext []byte) (*EncryptedRecord, error) {
 	km.mu.Lock()
 	defer km.mu.Unlock()
-	
+
 	// Check if rotation is needed
 	km.counter++
 	if km.counter >= km.rotateAfter {
@@ -259,12 +259,12 @@ func (km *KeyManager) Encrypt(plaintext []byte) (*EncryptedRecord, error) {
 			return nil, fmt.Errorf("key rotation failed: %w", err)
 		}
 	}
-	
+
 	ciphertext, err := km.encryptor.Encrypt(plaintext)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &EncryptedRecord{
 		Algorithm:  km.encryptor.Algorithm(),
 		Ciphertext: ciphertext,
@@ -276,13 +276,13 @@ func (km *KeyManager) Encrypt(plaintext []byte) (*EncryptedRecord, error) {
 func (km *KeyManager) Decrypt(record *EncryptedRecord) ([]byte, error) {
 	km.mu.RLock()
 	defer km.mu.RUnlock()
-	
+
 	// Get the appropriate key
 	key, exists := km.keys[record.KeyID]
 	if !exists {
 		return nil, fmt.Errorf("key not found: %s", record.KeyID)
 	}
-	
+
 	// Create encryptor for this key if different from current
 	var encryptor Encryptor
 	if record.KeyID == km.currentID {
@@ -301,7 +301,7 @@ func (km *KeyManager) Decrypt(record *EncryptedRecord) ([]byte, error) {
 			return nil, err
 		}
 	}
-	
+
 	return encryptor.Decrypt(record.Ciphertext)
 }
 
@@ -311,7 +311,7 @@ func (km *KeyManager) rotateKey() error {
 	if err != nil {
 		return err
 	}
-	
+
 	var newEncryptor Encryptor
 	switch km.encryptor.Algorithm() {
 	case "AES-256-GCM":
@@ -321,18 +321,18 @@ func (km *KeyManager) rotateKey() error {
 	default:
 		return fmt.Errorf("unsupported algorithm: %s", km.encryptor.Algorithm())
 	}
-	
+
 	if err != nil {
 		return err
 	}
-	
+
 	keyID := generateKeyID(newKey)
 	km.currentKey = newKey
 	km.currentID = keyID
 	km.keys[keyID] = newKey
 	km.encryptor = newEncryptor
 	km.counter = 0
-	
+
 	return nil
 }
 

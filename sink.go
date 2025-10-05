@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/willibrandon/mtlog/core"
 	"github.com/willibrandon/mtlog-audit/backends"
 	"github.com/willibrandon/mtlog-audit/compliance"
 	"github.com/willibrandon/mtlog-audit/monitoring"
 	"github.com/willibrandon/mtlog-audit/resilience"
 	"github.com/willibrandon/mtlog-audit/wal"
+	"github.com/willibrandon/mtlog/core"
 )
 
 // SyncMode defines when the WAL syncs to disk
@@ -284,7 +284,7 @@ func (s *Sink) handleCriticalFailure(event *core.LogEvent, err error) {
 	if s.monitoring != nil {
 		s.monitoring.RecordCriticalFailure(err)
 	}
-	
+
 	if s.config.FailureHandler != nil {
 		s.config.FailureHandler(event, err)
 	}
@@ -292,7 +292,7 @@ func (s *Sink) handleCriticalFailure(event *core.LogEvent, err error) {
 	if s.config.PanicOnFailure {
 		panic(fmt.Sprintf("AUDIT SINK CRITICAL FAILURE: %v", err))
 	}
-	
+
 	// Last resort: log to stderr
 	fmt.Fprintf(os.Stderr, "CRITICAL: Failed to write audit event: %v\n", err)
 }
@@ -307,7 +307,7 @@ func (s *Sink) replicateToBackend(backend backends.Backend, event *core.LogEvent
 		return
 	}
 	s.mu.RUnlock()
-	
+
 	// Use resilience manager for backend writes
 	var writeErr error
 	if s.resilience != nil {
@@ -317,14 +317,14 @@ func (s *Sink) replicateToBackend(backend backends.Backend, event *core.LogEvent
 	} else {
 		writeErr = backend.Write(event)
 	}
-	
+
 	if writeErr != nil {
 		// Check if error is due to backend being closed
 		if strings.Contains(writeErr.Error(), "backend closed") || strings.Contains(writeErr.Error(), "closed") {
 			// During shutdown, this is expected - don't log
 			return
 		}
-		
+
 		// Record failure in monitoring
 		if s.monitoring != nil {
 			s.monitoring.RecordBackendFailure(backend.Name(), writeErr)

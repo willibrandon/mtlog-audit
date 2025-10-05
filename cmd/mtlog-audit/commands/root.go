@@ -21,7 +21,7 @@ applications in financial services, healthcare, and government.`,
 // Execute runs the CLI.
 func Execute(v string) error {
 	version = v
-	
+
 	// Add commands
 	rootCmd.AddCommand(
 		versionCmd(),
@@ -34,7 +34,7 @@ func Execute(v string) error {
 		compactCmd(),
 		statsCmd(),
 	)
-	
+
 	return rootCmd.Execute()
 }
 

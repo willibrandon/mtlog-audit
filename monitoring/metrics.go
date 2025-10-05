@@ -13,116 +13,116 @@ var (
 		Name: "mtlog_audit_events_total",
 		Help: "Total number of audit events written",
 	}, []string{"status", "profile"})
-	
+
 	WriteLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "mtlog_audit_write_duration_seconds",
 		Help:    "Write latency in seconds",
 		Buckets: prometheus.ExponentialBuckets(0.001, 2, 15), // 1ms to 32s
 	}, []string{"backend", "status"})
-	
+
 	EventSize = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "mtlog_audit_event_size_bytes",
 		Help:    "Size of audit events in bytes",
 		Buckets: prometheus.ExponentialBuckets(100, 2, 15), // 100B to 3.2MB
 	})
-	
+
 	// WAL metrics
 	WALSize = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "mtlog_audit_wal_size_bytes",
 		Help: "Current WAL size in bytes",
 	})
-	
+
 	WALSegments = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "mtlog_audit_wal_segments_total",
 		Help: "Number of WAL segments",
 	})
-	
+
 	WALCorruptions = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "mtlog_audit_wal_corruptions_total",
 		Help: "Total number of WAL corruptions detected",
 	})
-	
+
 	WALRecoveries = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mtlog_audit_wal_recoveries_total",
 		Help: "Total number of WAL recovery attempts",
 	}, []string{"status"})
-	
+
 	// Compliance metrics
 	ComplianceOperations = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mtlog_audit_compliance_operations_total",
 		Help: "Total number of compliance operations",
 	}, []string{"profile", "operation", "status"})
-	
+
 	EncryptionOperations = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mtlog_audit_encryption_operations_total",
 		Help: "Total number of encryption operations",
 	}, []string{"algorithm", "operation", "status"})
-	
+
 	SigningOperations = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mtlog_audit_signing_operations_total",
 		Help: "Total number of signing operations",
 	}, []string{"algorithm", "operation", "status"})
-	
+
 	// Backend metrics
 	BackendOperations = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mtlog_audit_backend_operations_total",
 		Help: "Total number of backend operations",
 	}, []string{"backend", "operation", "status"})
-	
+
 	BackendLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "mtlog_audit_backend_latency_seconds",
 		Help:    "Backend operation latency",
 		Buckets: prometheus.ExponentialBuckets(0.001, 2, 15),
 	}, []string{"backend", "operation"})
-	
+
 	BackendSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "mtlog_audit_backend_size_bytes",
 		Help: "Backend storage size in bytes",
 	}, []string{"backend"})
-	
+
 	// Resilience metrics
 	RetryAttempts = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mtlog_audit_retry_attempts_total",
 		Help: "Total number of retry attempts",
 	}, []string{"operation", "status"})
-	
+
 	CircuitBreakerState = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "mtlog_audit_circuit_breaker_state",
 		Help: "Circuit breaker state (0=closed, 1=open, 2=half-open)",
 	}, []string{"breaker"})
-	
+
 	CircuitBreakerTrips = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mtlog_audit_circuit_breaker_trips_total",
 		Help: "Total number of circuit breaker trips",
 	}, []string{"breaker"})
-	
+
 	// System metrics
 	IntegrityScore = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "mtlog_audit_integrity_score",
 		Help: "Current integrity score (0-100)",
 	})
-	
+
 	ActiveSinks = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "mtlog_audit_active_sinks_total",
 		Help: "Number of active audit sinks",
 	})
-	
+
 	ErrorRate = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "mtlog_audit_error_rate",
 		Help: "Current error rate",
 	}, []string{"component"})
-	
+
 	// Performance metrics
 	ThroughputRate = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "mtlog_audit_throughput_events_per_second",
 		Help: "Current throughput in events per second",
 	})
-	
+
 	QueueDepth = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "mtlog_audit_queue_depth",
 		Help: "Current queue depth",
 	}, []string{"queue"})
-	
+
 	MemoryUsage = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "mtlog_audit_memory_usage_bytes",
 		Help: "Current memory usage in bytes",

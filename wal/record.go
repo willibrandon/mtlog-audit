@@ -19,7 +19,7 @@ const (
 	MagicFooter = 0x454E4452 // "ENDR" in hex
 	// Version is the WAL format version
 	Version = 1
-	
+
 	// Record flags
 	RecordFlagDeleted = 1 << 0 // Record has been marked for deletion
 )
@@ -217,26 +217,26 @@ func UnmarshalRecordFromBytes(data []byte) (*Record, int, error) {
 	if len(data) < 24 {
 		return nil, 0, fmt.Errorf("insufficient data for record header")
 	}
-	
+
 	// Check magic header
 	magic := binary.LittleEndian.Uint32(data)
 	if magic != MagicHeader {
 		return nil, 0, fmt.Errorf("invalid magic header")
 	}
-	
+
 	// Read length to determine total size
 	length := binary.LittleEndian.Uint32(data[8:12])
 	totalSize := 24 + 8 + 32 + int(length) + 4 + 4 // header + sequence + hash + data + crc + footer
-	
+
 	if len(data) < totalSize {
 		return nil, 0, fmt.Errorf("insufficient data for full record")
 	}
-	
+
 	recordData := data[:totalSize]
 	record, err := UnmarshalRecord(recordData)
 	if err != nil {
 		return nil, 0, err
 	}
-	
+
 	return record, totalSize, nil
 }

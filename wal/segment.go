@@ -39,10 +39,10 @@ type SegmentManager struct {
 func NewSegmentManager(walPath string, maxSize int64) (*SegmentManager, error) {
 	dir := filepath.Dir(walPath)
 	base := filepath.Base(walPath)
-	
+
 	// Remove .wal extension if present
 	base = strings.TrimSuffix(base, ".wal")
-	
+
 	sm := &SegmentManager{
 		baseDir:     dir,
 		baseName:    base,
@@ -51,12 +51,12 @@ func NewSegmentManager(walPath string, maxSize int64) (*SegmentManager, error) {
 		segments:    make([]*Segment, 0),
 		activeIndex: -1,
 	}
-	
+
 	// Scan for existing segments
 	if err := sm.scanSegments(); err != nil {
 		return nil, fmt.Errorf("failed to scan segments: %w", err)
 	}
-	
+
 	// If no segments exist, create an initial segment
 	if len(sm.segments) == 0 {
 		initialPath := filepath.Join(sm.baseDir, sm.baseName+".wal")
@@ -69,7 +69,7 @@ func NewSegmentManager(walPath string, maxSize int64) (*SegmentManager, error) {
 		sm.segments = append(sm.segments, segment)
 		sm.activeIndex = 0
 	}
-	
+
 	return sm, nil
 }
 
@@ -94,12 +94,12 @@ func (sm *SegmentManager) Rotate(currentSeq uint64) (string, error) {
 		sm.segments[sm.activeIndex].Sealed = true
 		sm.segments[sm.activeIndex].EndSeq = currentSeq
 	}
-	
+
 	// Create new segment with timestamp
 	timestamp := time.Now().Format("20060102-150405")
 	segmentName := fmt.Sprintf("%s-%s.wal", sm.baseName, timestamp)
 	segmentPath := filepath.Join(sm.baseDir, segmentName)
-	
+
 	// Ensure unique filename
 	counter := 1
 	for fileExists(segmentPath) {
@@ -107,7 +107,7 @@ func (sm *SegmentManager) Rotate(currentSeq uint64) (string, error) {
 		segmentPath = filepath.Join(sm.baseDir, segmentName)
 		counter++
 	}
-	
+
 	// Create new segment
 	segment := &Segment{
 		Path:      segmentPath,
@@ -115,16 +115,16 @@ func (sm *SegmentManager) Rotate(currentSeq uint64) (string, error) {
 		CreatedAt: time.Now(),
 		Sealed:    false,
 	}
-	
+
 	sm.segments = append(sm.segments, segment)
 	sm.activeIndex = len(sm.segments) - 1
-	
+
 	// Clean up old segments if needed
 	if err := sm.cleanupOldSegments(); err != nil {
 		// Log error but don't fail rotation
 		logger.Log.Warn("Failed to cleanup old segments: {error}", err)
 	}
-	
+
 	return segmentPath, nil
 }
 
@@ -135,29 +135,29 @@ func (sm *SegmentManager) scanSegments() error {
 	if err != nil {
 		return err
 	}
-	
+
 	for _, path := range matches {
 		stat, err := os.Stat(path)
 		if err != nil {
 			continue
 		}
-		
+
 		segment := &Segment{
 			Path:      path,
 			Size:      stat.Size(),
 			CreatedAt: stat.ModTime(),
 		}
-		
+
 		// Don't parse sequence from name - will be determined from actual records
-		
+
 		sm.segments = append(sm.segments, segment)
 	}
-	
+
 	// Sort segments by creation time
 	sort.Slice(sm.segments, func(i, j int) bool {
 		return sm.segments[i].CreatedAt.Before(sm.segments[j].CreatedAt)
 	})
-	
+
 	// Set the last segment as active if it exists and is not sealed
 	if len(sm.segments) > 0 {
 		sm.activeIndex = len(sm.segments) - 1
@@ -166,10 +166,10 @@ func (sm *SegmentManager) scanSegments() error {
 			sm.segments[sm.activeIndex-1].Sealed = true
 		}
 	}
-	
+
 	// Read sequence numbers from actual segment contents
 	sm.updateSequenceNumbers()
-	
+
 	return nil
 }
 
@@ -185,10 +185,10 @@ func (sm *SegmentManager) cleanupOldSegments() error {
 	if len(sm.segments) <= sm.maxSegments {
 		return nil
 	}
-	
+
 	// Keep only the last maxSegments
 	toDelete := len(sm.segments) - sm.maxSegments
-	
+
 	for i := 0; i < toDelete; i++ {
 		if sm.segments[i].Sealed {
 			if err := os.Remove(sm.segments[i].Path); err != nil {
@@ -196,11 +196,11 @@ func (sm *SegmentManager) cleanupOldSegments() error {
 			}
 		}
 	}
-	
+
 	// Remove deleted segments from the list
 	sm.segments = sm.segments[toDelete:]
 	sm.activeIndex = len(sm.segments) - 1
-	
+
 	return nil
 }
 
@@ -212,7 +212,7 @@ func (sm *SegmentManager) GetSegments() []*Segment {
 // ReadAllSegments reads all events from all segments in order.
 func (sm *SegmentManager) ReadAllSegments() ([][]byte, error) {
 	var allRecords [][]byte
-	
+
 	for _, segment := range sm.segments {
 		records, err := sm.readSegment(segment.Path)
 		if err != nil {
@@ -220,7 +220,7 @@ func (sm *SegmentManager) ReadAllSegments() ([][]byte, error) {
 		}
 		allRecords = append(allRecords, records...)
 	}
-	
+
 	return allRecords, nil
 }
 
@@ -231,19 +231,19 @@ func (sm *SegmentManager) readSegment(path string) ([][]byte, error) {
 		return nil, err
 	}
 	defer file.Close()
-	
+
 	var records [][]byte
-	
+
 	// Read entire file
 	data, err := io.ReadAll(file)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(data) == 0 {
 		return nil, nil
 	}
-	
+
 	// Parse records from binary format
 	offset := 0
 	for offset < len(data) {
@@ -251,31 +251,31 @@ func (sm *SegmentManager) readSegment(path string) ([][]byte, error) {
 		if offset+24 > len(data) { // 24 is minimum header size
 			break
 		}
-		
+
 		// Read magic number
 		magic := binary.LittleEndian.Uint32(data[offset:])
 		if magic != MagicHeader {
 			break // End of valid records
 		}
-		
+
 		// Read record length from header (offset 8, 4 bytes)
-		length := binary.LittleEndian.Uint32(data[offset+8:offset+12])
-		
+		length := binary.LittleEndian.Uint32(data[offset+8 : offset+12])
+
 		// Calculate total record size:
 		// header(24) + sequence(8) + prevhash(32) + data(length) + crc(4) + footer(4)
 		totalSize := 24 + 8 + 32 + int(length) + 4 + 4
-		
+
 		if offset+totalSize > len(data) {
 			break // Incomplete record
 		}
-		
+
 		// Extract complete record
 		record := make([]byte, totalSize)
 		copy(record, data[offset:offset+totalSize])
 		records = append(records, record)
 		offset += totalSize
 	}
-	
+
 	return records, nil
 }
 
@@ -351,22 +351,21 @@ func (sm *SegmentManager) updateSequenceNumbers() {
 		if segment.Size == 0 {
 			continue
 		}
-		
+
 		// Read the segment to find first and last sequence numbers
 		records, err := sm.readSegment(segment.Path)
 		if err != nil || len(records) == 0 {
 			continue
 		}
-		
+
 		// Parse first record for start sequence
 		if firstRecord, err := UnmarshalRecord(records[0]); err == nil {
 			segment.StartSeq = firstRecord.Sequence
 		}
-		
+
 		// Parse last record for end sequence
 		if lastRecord, err := UnmarshalRecord(records[len(records)-1]); err == nil {
 			segment.EndSeq = lastRecord.Sequence
 		}
 	}
 }
-

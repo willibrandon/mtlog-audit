@@ -19,17 +19,17 @@ import (
 
 // GCSBackend implements the Backend interface for Google Cloud Storage
 type GCSBackend struct {
-	config        GCSConfig
-	client        *storage.Client
-	bucket        *storage.BucketHandle
-	mu            sync.Mutex
-	buffer        []*core.LogEvent
-	lastFlush     time.Time
-	batchSize     int
-	flushTicker   *time.Ticker
-	stopChan      chan struct{}
-	wg            sync.WaitGroup
-	uploadedObjs  map[string]string // object name -> MD5 hash for verification
+	config       GCSConfig
+	client       *storage.Client
+	bucket       *storage.BucketHandle
+	mu           sync.Mutex
+	buffer       []*core.LogEvent
+	lastFlush    time.Time
+	batchSize    int
+	flushTicker  *time.Ticker
+	stopChan     chan struct{}
+	wg           sync.WaitGroup
+	uploadedObjs map[string]string // object name -> MD5 hash for verification
 }
 
 // NewGCSBackend creates a new GCS backend
@@ -144,7 +144,7 @@ func (gb *GCSBackend) VerifyIntegrity() (*IntegrityReport, error) {
 	query := &storage.Query{
 		Prefix: gb.config.Prefix,
 	}
-	
+
 	it := gb.bucket.Objects(ctx, query)
 	for {
 		attrs, err := it.Next()
@@ -177,7 +177,7 @@ func (gb *GCSBackend) VerifyIntegrity() (*IntegrityReport, error) {
 				report.Valid = false
 				continue
 			}
-			
+
 			// Verify checksums match
 			if reader.Attrs.CRC32C != attrs.CRC32C {
 				report.Errors = append(report.Errors, fmt.Sprintf("CRC32C mismatch for %s", attrs.Name))
@@ -207,14 +207,14 @@ func (gb *GCSBackend) Close() error {
 	gb.mu.Lock()
 	err := gb.flushLocked()
 	gb.mu.Unlock()
-	
+
 	// Close GCS client
 	if gb.client != nil {
 		if closeErr := gb.client.Close(); closeErr != nil && err == nil {
 			err = closeErr
 		}
 	}
-	
+
 	return err
 }
 
@@ -250,18 +250,18 @@ func (gb *GCSBackend) flushLocked() error {
 	if gb.config.Prefix != "" {
 		objectName = fmt.Sprintf("%s/%s", gb.config.Prefix, objectName)
 	}
-	
+
 	// Compress the data
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	encoder := json.NewEncoder(gw)
-	
+
 	for _, event := range gb.buffer {
 		if err := encoder.Encode(event); err != nil {
 			return fmt.Errorf("failed to encode event: %w", err)
 		}
 	}
-	
+
 	if err := gw.Close(); err != nil {
 		return fmt.Errorf("failed to compress data: %w", err)
 	}
@@ -277,7 +277,7 @@ func (gb *GCSBackend) flushLocked() error {
 
 	obj := gb.bucket.Object(objectName)
 	writer := obj.NewWriter(ctx)
-	
+
 	// Set object metadata
 	writer.ContentType = "application/gzip"
 	writer.ContentEncoding = "gzip"
