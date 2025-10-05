@@ -1,5 +1,5 @@
 # Makefile for mtlog-audit
-.PHONY: list build test bench torture clean install docker docker-up docker-down docker-test integration-test
+.PHONY: list build test bench torture clean install docker docker-up docker-down docker-test integration-test lint fmt vet
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -X github.com/willibrandon/mtlog-audit.Version=$(VERSION)
@@ -9,6 +9,9 @@ list:
 	@echo "Available targets:"
 	@echo "  build                 - Build the mtlog-audit binary"
 	@echo "  test                  - Run unit tests with race detector"
+	@echo "  fmt                   - Format all Go source files"
+	@echo "  vet                   - Run go vet on all packages"
+	@echo "  lint                  - Run golangci-lint"
 	@echo "  bench                 - Run performance benchmarks"
 	@echo "  torture               - Run torture tests (1M iterations, 24h timeout)"
 	@echo "  torture-docker        - Run containerized torture tests (1K iterations)"
@@ -28,6 +31,16 @@ build:
 
 test:
 	CGO_ENABLED=0 go test -race -coverprofile=coverage.out ./...
+
+fmt:
+	go fmt ./...
+
+vet:
+	go vet ./...
+
+lint:
+	@which golangci-lint > /dev/null || (echo "golangci-lint not installed. Install from https://golangci-lint.run/usage/install/" && exit 1)
+	golangci-lint run
 
 bench:
 	go test -bench=. -benchmem ./performance
