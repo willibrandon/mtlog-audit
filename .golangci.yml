@@ -51,15 +51,3 @@ linters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  exclude-rules:
-    # Exclude test files from certain linters
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
-
-    # Exclude generated files
-    - path: \.pb\.go$
-      linters:
-        - all
