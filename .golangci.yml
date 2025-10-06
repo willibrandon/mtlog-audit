@@ -1,3 +1,4 @@
+# golangci-lint configuration
 version: 2
 
 linters-settings:

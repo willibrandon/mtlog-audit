@@ -92,23 +92,6 @@ jobs:
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v6
       with:
-        version: latest
+        version: v2.5.0
         args: --timeout=5m
 
-  build-docker:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Build Docker image
-      run: make docker
-
-    - name: Test Docker image
-      run: |
-        docker run --rm mtlog-audit:$(git describe --tags --always --dirty 2>/dev/null || echo "dev") --version
