@@ -61,7 +61,7 @@ jobs:
 
     - name: Start Docker infrastructure
       run: |
-        docker-compose -f docker/docker-compose.yml up -d
+        docker compose -f docker/docker-compose.yml up -d
         echo "Waiting for services to be ready..."
         chmod +x docker/wait-for-services.sh
         bash docker/wait-for-services.sh
@@ -73,7 +73,7 @@ jobs:
 
     - name: Stop Docker infrastructure
       if: always()
-      run: docker-compose -f docker/docker-compose.yml down -v
+      run: docker compose -f docker/docker-compose.yml down -v
 
   lint:
     name: Lint

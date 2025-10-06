@@ -3,7 +3,7 @@
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -X github.com/willibrandon/mtlog-audit.Version=$(VERSION)
-DOCKER_COMPOSE := docker-compose -f docker/docker-compose.yml
+DOCKER_COMPOSE := docker compose -f docker/docker-compose.yml
 
 list:
 	@echo "Available targets:"
