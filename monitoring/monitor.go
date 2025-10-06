@@ -42,22 +42,18 @@ func NewMonitor(cfg *Config) *Monitor {
 
 // Monitor manages monitoring and metrics collection
 type Monitor struct {
-	mu            sync.RWMutex
-	started       atomic.Bool
-	eventCount    int64
-	errorCount    int64
-	lastEventTime time.Time
-	startTime     time.Time
-	ctx           context.Context
-	cancel        context.CancelFunc
-
-	// Sliding window for throughput calculation
-	eventWindow []int64
-	windowSize  int
-	windowIndex int
-
-	// Options
+	startTime      time.Time
+	lastEventTime  time.Time
+	ctx            context.Context
+	cancel         context.CancelFunc
+	eventWindow    []int64
+	errorCount     int64
+	eventCount     int64
+	windowSize     int
+	windowIndex    int
 	updateInterval time.Duration
+	mu             sync.RWMutex
+	started        atomic.Bool
 	enableProfiler bool
 }
 
@@ -293,12 +289,12 @@ func (m *Monitor) updateMetrics(lastEventCount *int64) {
 
 // Stats contains monitor statistics
 type Stats struct {
+	LastEventTime time.Time
 	Uptime        time.Duration
 	EventsWritten int64
 	ErrorCount    int64
 	ErrorRate     float64
-	Throughput    float64 // events per second
-	LastEventTime time.Time
+	Throughput    float64
 }
 
 // HealthCheck performs a health check
@@ -345,11 +341,11 @@ func (m *Monitor) HealthCheck() Health {
 
 // Health represents health status
 type Health struct {
-	Status    HealthStatus
 	Timestamp time.Time
-	Uptime    time.Duration
+	Status    HealthStatus
 	Issues    []string
 	Stats     Stats
+	Uptime    time.Duration
 }
 
 // HealthStatus represents health status

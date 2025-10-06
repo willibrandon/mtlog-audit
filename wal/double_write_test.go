@@ -1,6 +1,7 @@
 package wal
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,7 @@ func TestDoubleWriteBuffer_WriteAndRecover(t *testing.T) {
 
 	// Create journal file
 	// #nosec G304 - test file path from TempDir
-	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
+	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0o600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestDoubleWriteBuffer_RecoverIncomplete(t *testing.T) {
 
 	// Create and write without marking complete
 	// #nosec G304 - test file path from TempDir
-	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
+	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0o600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestDoubleWriteBuffer_RecoverIncomplete(t *testing.T) {
 
 	// Reopen and recover
 	// #nosec G304 - test file path from TempDir
-	journal2, err := os.OpenFile(journalPath, os.O_RDWR|os.O_SYNC, 0600)
+	journal2, err := os.OpenFile(journalPath, os.O_RDWR|os.O_SYNC, 0o600)
 	if err != nil {
 		t.Fatalf("Failed to reopen journal: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestDoubleWriteBuffer_RecoverIncomplete(t *testing.T) {
 	// Verify recovered data
 	for i, entry := range incomplete {
 		expectedData := entries[i].data
-		if string(entry.Data) != string(expectedData) {
+		if !bytes.Equal(entry.Data, expectedData) {
 			t.Errorf("Entry %d: expected %q, got %q", i, expectedData, entry.Data)
 		}
 		if entry.Position != entries[i].position {
@@ -129,7 +130,7 @@ func TestDoubleWriteBuffer_Clear(t *testing.T) {
 	journalPath := filepath.Join(dir, "test.journal")
 
 	// #nosec G304 - test file path from TempDir
-	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
+	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0o600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
@@ -168,7 +169,7 @@ func TestDoubleWriteBuffer_Compact(t *testing.T) {
 	journalPath := filepath.Join(dir, "test.journal")
 
 	// #nosec G304 - test file path from TempDir
-	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
+	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0o600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
@@ -218,7 +219,7 @@ func TestDoubleWriteBuffer_CRCValidation(t *testing.T) {
 
 	// Create journal and write data
 	// #nosec G304 - test file path from TempDir
-	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
+	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0o600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
@@ -247,14 +248,14 @@ func TestDoubleWriteBuffer_CRCValidation(t *testing.T) {
 		journalData[30] ^= 0xFF // Flip bits
 	}
 
-	err = os.WriteFile(journalPath, journalData, 0600)
+	err = os.WriteFile(journalPath, journalData, 0o600)
 	if err != nil {
 		t.Fatalf("Failed to write corrupted journal: %v", err)
 	}
 
 	// Try to recover
 	// #nosec G304 - test file path from TempDir
-	journal2, err := os.OpenFile(journalPath, os.O_RDWR|os.O_SYNC, 0600)
+	journal2, err := os.OpenFile(journalPath, os.O_RDWR|os.O_SYNC, 0o600)
 	if err != nil {
 		t.Fatalf("Failed to reopen journal: %v", err)
 	}
@@ -277,7 +278,7 @@ func TestDoubleWriteBuffer_LargeData(t *testing.T) {
 	journalPath := filepath.Join(dir, "test.journal")
 
 	// #nosec G304 - test file path from TempDir
-	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
+	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0o600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
@@ -329,7 +330,7 @@ func BenchmarkDoubleWriteBuffer_Write(b *testing.B) {
 	journalPath := filepath.Join(dir, "bench.journal")
 
 	// #nosec G304 - test file path from TempDir
-	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
+	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0o600)
 	if err != nil {
 		b.Fatalf("Failed to create journal: %v", err)
 	}

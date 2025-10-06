@@ -42,31 +42,29 @@ func DefaultCompactionPolicy() *CompactionPolicy {
 
 // Compactor handles segment compaction for the WAL
 type Compactor struct {
-	mu            sync.RWMutex
+	lastCompacted time.Time
 	wal           *WAL
 	policy        *CompactionPolicy
-	running       bool
 	stopChan      chan struct{}
-	lastCompacted time.Time
 	stats         CompactionStats
+	mu            sync.RWMutex
+	running       bool
 }
 
 // CompactionStats tracks compaction statistics
 type CompactionStats struct {
+	LastCompactionTime     time.Time
+	LastAnalyzedTime       time.Time
+	LastAnalyzedSegment    string
+	Errors                 []error
 	CompactionsRun         int
 	SegmentsCompacted      int
 	BytesCompacted         int64
 	BytesReclaimed         int64
-	LastCompactionTime     time.Time
 	LastCompactionDuration time.Duration
-	Errors                 []error
-
-	// Analysis metrics for monitoring
-	LastAnalyzedSegment    string
 	LastAnalyzedRatio      float64
 	LastAnalyzedDeleted    int
 	LastAnalyzedSuperseded int
-	LastAnalyzedTime       time.Time
 }
 
 // NewCompactor creates a new segment compactor
@@ -353,7 +351,7 @@ func (c *Compactor) compactSegmentGroup(segments []*Segment) (int64, error) {
 	// Create new compacted segment
 	compactedPath := c.generateCompactedSegmentPath(segments[0].StartSeq, segments[len(segments)-1].EndSeq)
 	// #nosec G304 - compacted segment path generated internally from controlled sequences
-	compactedFile, err := os.OpenFile(compactedPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL|os.O_SYNC, 0600)
+	compactedFile, err := os.OpenFile(compactedPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL|os.O_SYNC, 0o600)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create compacted segment: %w", err)
 	}
@@ -493,7 +491,7 @@ func (c *Compactor) archiveSegment(seg *Segment) error {
 	archiveDir := filepath.Join(filepath.Dir(c.wal.path), "archive")
 
 	// Create archive directory if it doesn't exist
-	if err := os.MkdirAll(archiveDir, 0700); err != nil {
+	if err := os.MkdirAll(archiveDir, 0o700); err != nil {
 		return err
 	}
 
@@ -740,7 +738,7 @@ func (c *Compactor) MarkDeleted(sequence uint64) error {
 	// Create a temporary file for the updated segment
 	tempPath := targetSegment.Path + ".tmp"
 	// #nosec G304 - temp file path derived from controlled segment path
-	tempFile, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL|os.O_SYNC, 0600)
+	tempFile, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL|os.O_SYNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}

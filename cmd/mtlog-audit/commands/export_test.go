@@ -216,10 +216,10 @@ func TestParseTime(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
+		check     func(time.Time) bool
 		name      string
 		input     string
 		wantError bool
-		check     func(time.Time) bool
 	}{
 		{
 			name:      "RFC3339",

@@ -91,10 +91,7 @@ Examples:
 }
 
 // parseTimeRange parses start and end time strings into time.Time values.
-func parseTimeRange(startStr, endStr string) (time.Time, time.Time, error) {
-	var start, end time.Time
-	var err error
-
+func parseTimeRange(startStr, endStr string) (start, end time.Time, err error) {
 	// Parse start time
 	if startStr != "" {
 		start, err = parseTime(startStr)

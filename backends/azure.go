@@ -20,16 +20,16 @@ import (
 
 // AzureBackend implements the Backend interface for Azure Blob Storage
 type AzureBackend struct {
-	config        AzureConfig
 	containerURL  azblob.ContainerURL
-	mu            sync.Mutex
-	buffer        []*core.LogEvent
 	lastFlush     time.Time
-	batchSize     int
 	flushTicker   *time.Ticker
 	stopChan      chan struct{}
+	uploadedBlobs map[string]string
+	buffer        []*core.LogEvent
+	config        AzureConfig
 	wg            sync.WaitGroup
-	uploadedBlobs map[string]string // blob name -> MD5 hash for verification
+	batchSize     int
+	mu            sync.Mutex
 }
 
 // NewAzureBackend creates a new Azure backend

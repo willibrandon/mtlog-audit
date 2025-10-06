@@ -14,13 +14,13 @@ import (
 
 // Engine provides compliance transformations and enforcement
 type Engine struct {
-	mu              sync.RWMutex
-	profile         Profile
 	encryptor       Encryptor
 	signer          Signer
 	keyManager      *KeyManager
 	signatureChain  *SignatureChain
+	profile         Profile
 	sequence        uint64
+	mu              sync.RWMutex
 	maskSensitive   bool
 	enforceRequired bool
 }
@@ -405,23 +405,23 @@ func maskString(s string) string {
 //nolint:revive // Name chosen for clarity - Record would be too generic in compliance context
 type ComplianceRecord struct {
 	Timestamp     time.Time         `json:"timestamp"`
+	EncryptedData *EncryptedRecord  `json:"encrypted_data,omitempty"`
+	Signature     *ChainedSignature `json:"signature,omitempty"`
 	Profile       string            `json:"profile"`
+	PlainData     []byte            `json:"plain_data,omitempty"`
 	Sequence      uint64            `json:"sequence"`
 	Encrypted     bool              `json:"encrypted"`
 	Signed        bool              `json:"signed"`
-	PlainData     []byte            `json:"plain_data,omitempty"`
-	EncryptedData *EncryptedRecord  `json:"encrypted_data,omitempty"`
-	Signature     *ChainedSignature `json:"signature,omitempty"`
 }
 
 // ChainVerificationReport represents the result of chain verification
 type ChainVerificationReport struct {
 	Timestamp       time.Time `json:"timestamp"`
 	Profile         string    `json:"profile"`
-	Valid           bool      `json:"valid"`
+	Error           string    `json:"error,omitempty"`
 	TotalSignatures int       `json:"total_signatures"`
 	LastSequence    uint64    `json:"last_sequence"`
-	Error           string    `json:"error,omitempty"`
+	Valid           bool      `json:"valid"`
 }
 
 // GetRetentionPeriod returns the retention period for the profile

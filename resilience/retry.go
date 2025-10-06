@@ -11,12 +11,12 @@ import (
 
 // RetryPolicy defines retry behavior for failed operations
 type RetryPolicy struct {
-	MaxAttempts     int              // Maximum number of retry attempts
-	InitialDelay    time.Duration    // Initial delay between retries
-	MaxDelay        time.Duration    // Maximum delay between retries
-	Multiplier      float64          // Multiplier for exponential backoff
-	Jitter          float64          // Jitter factor (0.0 to 1.0)
-	RetryableErrors func(error) bool // Function to determine if error is retryable
+	RetryableErrors func(error) bool
+	MaxAttempts     int
+	InitialDelay    time.Duration
+	MaxDelay        time.Duration
+	Multiplier      float64
+	Jitter          float64
 }
 
 // DefaultRetryPolicy returns a sensible default retry policy

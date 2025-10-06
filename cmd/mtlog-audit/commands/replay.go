@@ -135,7 +135,7 @@ func runReplay(walPath, startTimeStr, endTimeStr, format, output string) error {
 		var response string
 		_, _ = fmt.Scanln(&response)
 		if response != "y" && response != "Y" {
-			return fmt.Errorf("replay cancelled due to integrity issues")
+			return fmt.Errorf("replay canceled due to integrity issues")
 		}
 	} else {
 		fmt.Printf(" ✅\n")

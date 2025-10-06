@@ -18,13 +18,12 @@ import (
 
 // RecoveryEngine handles WAL recovery after corruption or crashes.
 type RecoveryEngine struct {
+	hashChains     map[uint64][32]byte
 	path           string
 	maxRecordSize  int64
 	skipCorrupted  bool
 	verifyChecksum bool
-	// Forensic recovery fields
 	enableForensic bool
-	hashChains     map[uint64][32]byte // sequence -> hash for chain reconstruction
 }
 
 // RecoveredRecord contains data from a recovered WAL record.
@@ -38,18 +37,17 @@ type RecoveredRecord struct {
 
 // RecoveryReport contains the results of a recovery operation.
 type RecoveryReport struct {
-	TotalRecords      int
-	RecoveredRecords  int
-	CorruptedRecords  int
-	SkippedBytes      int64
-	LastGoodSequence  uint64
-	RecoveredSegments []string
-	Errors            []error
-	// Forensic recovery fields
+	RecoveredSegments   []string
+	Errors              []error
+	RecoveryMethods     []string
+	TotalRecords        int
+	RecoveredRecords    int
+	CorruptedRecords    int
+	SkippedBytes        int64
+	LastGoodSequence    uint64
 	HashChainBreaks     int
 	ReconstructedChains int
 	PartialRecords      int
-	RecoveryMethods     []string
 }
 
 // RecoveryOption configures the recovery engine.
@@ -430,7 +428,7 @@ func (r *RecoveryEngine) RepairWAL(outputPath string) error {
 
 	// Create new WAL file
 	// #nosec G304 - output path from user-specified recovery destination
-	output, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_SYNC, 0600)
+	output, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_SYNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to create output WAL: %w", err)
 	}
@@ -630,62 +628,64 @@ func (r *RecoveryEngine) attemptHashReconstruction(file *os.File, offset int64, 
 
 	// Strategy 1: Find records with matching hash chains
 	for i := 0; i < n-100; i++ {
-		if binary.LittleEndian.Uint32(buffer[i:]) == MagicHeader {
-			// Found potential header
-			if i+72 > n {
-				continue
+		if binary.LittleEndian.Uint32(buffer[i:]) != MagicHeader {
+			continue
+		}
+
+		// Found potential header
+		if i+72 > n {
+			continue
+		}
+
+		// Extract header fields
+		version := binary.LittleEndian.Uint16(buffer[i+4:])
+		flags := binary.LittleEndian.Uint16(buffer[i+6:])
+		length := binary.LittleEndian.Uint32(buffer[i+8:])
+		timestamp := binary.LittleEndian.Uint64(buffer[i+12:])
+		headerCRC := binary.LittleEndian.Uint32(buffer[i+20:])
+
+		// Validate header structure
+		// #nosec G115 - validated max size
+		if version != Version || length > uint32(r.maxRecordSize) {
+			continue
+		}
+
+		// Calculate expected record size
+		recordSize := 24 + 8 + 32 + int(length) + 4 + 4
+		if i+recordSize > n {
+			continue
+		}
+
+		// Extract the full potential record
+		potentialRecord := buffer[i : i+recordSize]
+
+		// Try to validate hash chain
+		if len(potentialRecord) > 32 {
+			// Extract previous hash from record
+			var prevHash [32]byte
+			copy(prevHash[:], potentialRecord[32:64])
+
+			// Check if this record chains from our last good hash
+			if prevHash == lastGoodHash {
+				// Perfect match! This record continues our chain
+				return r.reconstructRecord(potentialRecord, true)
 			}
 
-			// Extract header fields
-			version := binary.LittleEndian.Uint16(buffer[i+4:])
-			flags := binary.LittleEndian.Uint16(buffer[i+6:])
-			length := binary.LittleEndian.Uint32(buffer[i+8:])
-			timestamp := binary.LittleEndian.Uint64(buffer[i+12:])
-			headerCRC := binary.LittleEndian.Uint32(buffer[i+20:])
-
-			// Validate header structure
-			// #nosec G115 - validated max size
-			if version != Version || length > uint32(r.maxRecordSize) {
-				continue
-			}
-
-			// Calculate expected record size
-			recordSize := 24 + 8 + 32 + int(length) + 4 + 4
-			if i+recordSize > n {
-				continue
-			}
-
-			// Extract the full potential record
-			potentialRecord := buffer[i : i+recordSize]
-
-			// Try to validate hash chain
-			if len(potentialRecord) > 32 {
-				// Extract previous hash from record
-				var prevHash [32]byte
-				copy(prevHash[:], potentialRecord[32:64])
-
-				// Check if this record chains from our last good hash
-				if prevHash == lastGoodHash {
-					// Perfect match! This record continues our chain
-					return r.reconstructRecord(potentialRecord, true)
-				}
-
-				// Check if this record could be part of a fork
-				if r.isValidHashChainFork(prevHash, lastGoodHash) {
-					// This could be a valid fork in the chain
-					return r.reconstructRecord(potentialRecord, false)
-				}
-			}
-
-			// Strategy 2: CRC-based reconstruction
-			if r.attemptCRCReconstruction(potentialRecord, headerCRC) {
+			// Check if this record could be part of a fork
+			if r.isValidHashChainFork(prevHash, lastGoodHash) {
+				// This could be a valid fork in the chain
 				return r.reconstructRecord(potentialRecord, false)
 			}
+		}
 
-			// Strategy 3: Pattern-based reconstruction
-			if r.attemptPatternReconstruction(potentialRecord, timestamp, flags) {
-				return r.reconstructRecord(potentialRecord, false)
-			}
+		// Strategy 2: CRC-based reconstruction
+		if r.attemptCRCReconstruction(potentialRecord, headerCRC) {
+			return r.reconstructRecord(potentialRecord, false)
+		}
+
+		// Strategy 3: Pattern-based reconstruction
+		if r.attemptPatternReconstruction(potentialRecord, timestamp, flags) {
+			return r.reconstructRecord(potentialRecord, false)
 		}
 	}
 

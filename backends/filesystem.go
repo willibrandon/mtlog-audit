@@ -16,17 +16,17 @@ import (
 
 // FilesystemBackend implements filesystem-based storage with redundancy
 type FilesystemBackend struct {
-	mu          sync.RWMutex
-	config      FilesystemConfig
-	currentFile *os.File
-	currentPath string
-	currentSize int64
 	rotateAt    time.Time
+	currentFile *os.File
+	syncTimer   *time.Timer
+	shadowFile  *os.File
+	currentPath string
+	shadowPath  string
+	config      FilesystemConfig
+	currentSize int64
 	writeCount  int64
 	errorCount  int64
-	syncTimer   *time.Timer
-	shadowPath  string
-	shadowFile  *os.File
+	mu          sync.RWMutex
 	closed      atomic.Bool
 }
 
@@ -38,7 +38,7 @@ func NewFilesystemBackend(config FilesystemConfig) (*FilesystemBackend, error) {
 	}
 
 	// Create directories
-	if err := os.MkdirAll(config.Path, 0750); err != nil {
+	if err := os.MkdirAll(config.Path, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create directory %s: %w", config.Path, err)
 	}
 
@@ -50,7 +50,7 @@ func NewFilesystemBackend(config FilesystemConfig) (*FilesystemBackend, error) {
 	// Setup shadow copy if enabled
 	if config.Shadow {
 		shadowPath := config.Path + ".shadow"
-		if err := os.MkdirAll(shadowPath, 0750); err != nil {
+		if err := os.MkdirAll(shadowPath, 0o750); err != nil {
 			return nil, fmt.Errorf("failed to create shadow directory %s: %w", shadowPath, err)
 		}
 		backend.shadowPath = shadowPath
@@ -344,7 +344,7 @@ func (fb *FilesystemBackend) rotate() error {
 
 	// Open new file with O_SYNC for durability
 	file, err := os.OpenFile(fb.currentPath, // #nosec G302 - controlled file path
-		os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0600)
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to open file %s: %w", fb.currentPath, err)
 	}
@@ -357,7 +357,7 @@ func (fb *FilesystemBackend) rotate() error {
 	if fb.config.Shadow {
 		shadowFilePath := filepath.Join(fb.shadowPath, filename)
 		shadowFile, err := os.OpenFile(shadowFilePath, // #nosec G304 G302 - controlled shadow path
-			os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0600)
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0o600)
 		if err != nil {
 			// Log error but continue - shadow is best effort
 			atomic.AddInt64(&fb.errorCount, 1)

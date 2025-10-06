@@ -32,11 +32,11 @@ type Backend interface {
 type IntegrityReport struct {
 	Timestamp        time.Time `json:"timestamp"`
 	Backend          string    `json:"backend"`
+	Errors           []string  `json:"errors,omitempty"`
 	TotalRecords     int64     `json:"total_records"`
 	VerifiedRecords  int64     `json:"verified_records"`
 	CorruptedRecords int64     `json:"corrupted_records"`
 	Valid            bool      `json:"valid"`
-	Errors           []string  `json:"errors,omitempty"`
 }
 
 // Query represents a query for reading events
@@ -138,9 +138,9 @@ type GCSConfig struct {
 	ProjectID       string `json:"project_id"`
 	Prefix          string `json:"prefix"`
 	StorageClass    string `json:"storage_class"`
-	RetentionDays   int    `json:"retention_days"`
 	Region          string `json:"region"`
 	CredentialsFile string `json:"credentials_file"`
+	RetentionDays   int    `json:"retention_days"`
 	Versioning      bool   `json:"versioning"`
 }
 
@@ -194,9 +194,9 @@ func Create(config Config) (Backend, error) {
 
 // BackendError represents a backend-specific error
 type BackendError struct {
+	Err     error
 	Backend string
 	Op      string
-	Err     error
 }
 
 func (e *BackendError) Error() string {

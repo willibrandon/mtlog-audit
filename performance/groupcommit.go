@@ -14,25 +14,23 @@ import (
 
 // GroupCommitter batches events for efficient writes
 type GroupCommitter struct {
-	mu         sync.Mutex
-	wal        *wal.WAL
-	batchSize  int
-	maxDelay   time.Duration
-	pending    []*core.LogEvent
-	waiters    []chan error
-	flushTimer *time.Timer
-	closed     atomic.Bool
-	flushChan  chan struct{}
-	errorChan  chan error
-	wg         sync.WaitGroup
-
-	// Statistics
+	flushTimer   *time.Timer
+	wal          *wal.WAL
+	errorChan    chan error
+	flushChan    chan struct{}
+	pending      []*core.LogEvent
+	waiters      []chan error
+	wg           sync.WaitGroup
+	maxDelay     time.Duration
+	batchSize    int
 	batchCount   int64
 	eventCount   int64
 	flushCount   int64
 	timerFlushes int64
 	sizeFlushes  int64
-	totalLatency int64 // nanoseconds
+	totalLatency int64
+	mu           sync.Mutex
+	closed       atomic.Bool
 }
 
 // NewGroupCommitter creates a new group committer
@@ -351,7 +349,7 @@ type OptimizedGroupCommitter struct {
 }
 
 // NewOptimizedGroupCommitter creates an optimized group committer
-func NewOptimizedGroupCommitter(w *wal.WAL, bufferSize int, batchSize int, maxDelay time.Duration) *OptimizedGroupCommitter {
+func NewOptimizedGroupCommitter(w *wal.WAL, bufferSize, batchSize int, maxDelay time.Duration) *OptimizedGroupCommitter {
 	if bufferSize <= 0 {
 		bufferSize = 10000
 	}

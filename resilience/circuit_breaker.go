@@ -35,37 +35,31 @@ func (s State) String() string {
 
 // CircuitBreaker implements the circuit breaker pattern
 type CircuitBreaker struct {
-	mu sync.RWMutex
-
-	// Configuration
-	name             string
-	maxFailures      int32
-	resetTimeout     time.Duration
-	halfOpenMaxCalls int32
-	onStateChange    func(from, to State)
-
-	// State
-	state           int32 // atomic State
-	failures        int32 // atomic
-	successes       int32 // atomic
-	lastFailureTime time.Time
-	halfOpenCalls   int32 // atomic
-
-	// Statistics
-	totalCalls          int64 // atomic
-	totalFailures       int64 // atomic
-	totalSuccesses      int64 // atomic
-	consecutiveFailures int32 // atomic
+	lastFailureTime     time.Time
 	lastOpenedAt        time.Time
+	onStateChange       func(from, to State)
+	name                string
+	resetTimeout        time.Duration
+	totalSuccesses      int64
+	totalFailures       int64
+	totalCalls          int64
+	mu                  sync.RWMutex
+	halfOpenMaxCalls    int32
+	halfOpenCalls       int32
+	successes           int32
+	failures            int32
+	state               int32
+	consecutiveFailures int32
+	maxFailures         int32
 }
 
 // CircuitBreakerConfig configures a circuit breaker
 type CircuitBreakerConfig struct {
-	Name             string
-	MaxFailures      int32
-	ResetTimeout     time.Duration
-	HalfOpenMaxCalls int32
 	OnStateChange    func(from, to State)
+	Name             string
+	ResetTimeout     time.Duration
+	MaxFailures      int32
+	HalfOpenMaxCalls int32
 }
 
 // NewCircuitBreaker creates a new circuit breaker
@@ -256,14 +250,14 @@ func (cb *CircuitBreaker) Reset() {
 
 // CircuitBreakerStats contains circuit breaker statistics
 type CircuitBreakerStats struct {
+	LastFailureTime     time.Time
+	LastOpenedAt        time.Time
 	Name                string
-	State               State
 	TotalCalls          int64
 	TotalFailures       int64
 	TotalSuccesses      int64
+	State               State
 	ConsecutiveFailures int32
-	LastFailureTime     time.Time
-	LastOpenedAt        time.Time
 }
 
 // SuccessRate returns the success rate

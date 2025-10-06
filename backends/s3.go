@@ -30,7 +30,7 @@ import (
 
 // S3Backend implements AWS S3 storage backend with compliance features
 type S3Backend struct {
-	mu            sync.RWMutex
+	lastWrite     time.Time
 	client        *s3.S3
 	uploader      *s3manager.Uploader
 	downloader    *s3manager.Downloader
@@ -40,16 +40,16 @@ type S3Backend struct {
 	storageClass  string
 	encryption    string
 	kmsKeyID      string
-	versioning    bool
-	objectLock    bool
-	retentionDays int
-	compress      bool
-	batchSize     int
 	currentBatch  []*core.LogEvent
+	retentionDays int
+	batchSize     int
 	writeCount    int64
 	errorCount    int64
-	lastWrite     time.Time
+	mu            sync.RWMutex
 	closed        atomic.Bool
+	objectLock    bool
+	compress      bool
+	versioning    bool
 }
 
 // S3Option configures S3 backend
@@ -710,13 +710,13 @@ func (s *S3Backend) GetStats() S3Stats {
 
 // S3Stats contains S3 backend statistics
 type S3Stats struct {
-	WriteCount    int64
-	ErrorCount    int64
 	LastWrite     time.Time
 	Bucket        string
 	Prefix        string
+	WriteCount    int64
+	ErrorCount    int64
+	RetentionDays int
 	ObjectLock    bool
 	Versioning    bool
 	Encryption    bool
-	RetentionDays int
 }

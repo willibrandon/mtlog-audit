@@ -16,52 +16,41 @@ import (
 
 // WALStats contains comprehensive WAL statistics.
 type WALStats struct {
-	// File statistics
-	Path         string    `json:"path"`
-	TotalSize    int64     `json:"total_size"`
-	SegmentCount int       `json:"segment_count"`
-	CreatedAt    time.Time `json:"created_at"`
-	ModifiedAt   time.Time `json:"modified_at"`
-
-	// Record statistics
-	TotalRecords  int    `json:"total_records"`
-	FirstSequence uint64 `json:"first_sequence"`
-	LastSequence  uint64 `json:"last_sequence"`
-	ErrorCount    int    `json:"error_count"`
-	WarningCount  int    `json:"warning_count"`
-	InfoCount     int    `json:"info_count"`
-	DebugCount    int    `json:"debug_count"`
-
-	// Time range
-	FirstEventTime time.Time `json:"first_event_time"`
-	LastEventTime  time.Time `json:"last_event_time"`
-	Duration       string    `json:"duration"`
-
-	// Segment details
-	Segments []SegmentStats `json:"segments"`
-
-	// Health indicators
-	HasCorruption bool   `json:"has_corruption"`
-	IsSealed      bool   `json:"is_sealed"`
-	Compression   string `json:"compression"`
-
-	// Performance metrics
-	AvgRecordSize    int64   `json:"avg_record_size"`
-	AvgSegmentSize   int64   `json:"avg_segment_size"`
-	FragmentationPct float64 `json:"fragmentation_pct"`
+	FirstEventTime   time.Time      `json:"first_event_time"`
+	CreatedAt        time.Time      `json:"created_at"`
+	ModifiedAt       time.Time      `json:"modified_at"`
+	LastEventTime    time.Time      `json:"last_event_time"`
+	Compression      string         `json:"compression"`
+	Path             string         `json:"path"`
+	Duration         string         `json:"duration"`
+	Segments         []SegmentStats `json:"segments"`
+	TotalRecords     int            `json:"total_records"`
+	SegmentCount     int            `json:"segment_count"`
+	InfoCount        int            `json:"info_count"`
+	DebugCount       int            `json:"debug_count"`
+	ErrorCount       int            `json:"error_count"`
+	LastSequence     uint64         `json:"last_sequence"`
+	FirstSequence    uint64         `json:"first_sequence"`
+	WarningCount     int            `json:"warning_count"`
+	FragmentationPct float64        `json:"fragmentation_pct"`
+	AvgSegmentSize   int64          `json:"avg_segment_size"`
+	TotalSize        int64          `json:"total_size"`
+	AvgRecordSize    int64          `json:"avg_record_size"`
+	IsSealed         bool           `json:"is_sealed"`
+	HasCorruption    bool           `json:"has_corruption"`
 }
 
 // SegmentStats contains statistics for a single segment.
 type SegmentStats struct {
+	CreatedAt     time.Time `json:"created_at"`
 	Path          string    `json:"path"`
 	Size          int64     `json:"size"`
 	StartSeq      uint64    `json:"start_seq"`
 	EndSeq        uint64    `json:"end_seq"`
 	RecordCount   int       `json:"record_count"`
-	CreatedAt     time.Time `json:"created_at"`
+	CompactionPct float64   `json:"compaction_pct"`
 	Sealed        bool      `json:"sealed"`
 	Corrupted     bool      `json:"corrupted"`
-	CompactionPct float64   `json:"compaction_pct"`
 }
 
 // statsCmd creates the stats command.

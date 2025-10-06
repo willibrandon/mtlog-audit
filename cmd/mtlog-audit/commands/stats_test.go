@@ -171,16 +171,16 @@ func TestStatsCommand(t *testing.T) {
 
 func TestFormatBytes(t *testing.T) {
 	tests := []struct {
-		bytes    int64
 		expected string
+		bytes    int64
 	}{
-		{0, "0 B"},
-		{512, "512 B"},
-		{1024, "1.0 KB"},
-		{1536, "1.5 KB"},
-		{1048576, "1.0 MB"},
-		{1073741824, "1.0 GB"},
-		{1099511627776, "1.0 TB"},
+		{"0 B", 0},
+		{"512 B", 512},
+		{"1.0 KB", 1024},
+		{"1.5 KB", 1536},
+		{"1.0 MB", 1048576},
+		{"1.0 GB", 1073741824},
+		{"1.0 TB", 1099511627776},
 	}
 
 	for _, tt := range tests {

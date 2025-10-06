@@ -1,36 +1,9 @@
 # golangci-lint configuration
-version: 2
+version: "2"
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-
-  govet:
-    enable-all: true
-    disable:
-      - shadow
-
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-    disabled-checks:
-      - hugeParam
-      - rangeValCopy
-
-  revive:
-    rules:
-      - name: exported
-        disabled: false
-      - name: unexported-return
-        disabled: true
-      - name: blank-imports
-        disabled: false
-
-  misspell:
-    locale: US
+run:
+  timeout: 5m
+  tests: true
 
 linters:
   enable:
@@ -44,12 +17,38 @@ linters:
     - gosec
     - gocritic
 
-run:
-  timeout: 5m
-  tests: true
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+
+    govet:
+      enable-all: true
+      disable:
+        - shadow
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+        - name: unexported-return
+          disabled: true
+        - name: blank-imports
+          disabled: false
+
+    misspell:
+      locale: US
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
 

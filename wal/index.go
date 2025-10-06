@@ -14,19 +14,19 @@ import (
 // It maintains an in-memory index of segments with their sequence ranges
 // and timestamps for efficient time-based queries.
 type Index struct {
-	mu       sync.RWMutex
-	segments []SegmentInfo
-	entries  map[uint64]IndexEntry // sequence -> entry mapping
+	entries  map[uint64]IndexEntry
 	path     string
+	segments []SegmentInfo
+	mu       sync.RWMutex
 }
 
 // SegmentInfo contains metadata about a WAL segment
 type SegmentInfo struct {
+	StartTime   time.Time
+	EndTime     time.Time
 	Path        string
 	StartSeq    uint64
 	EndSeq      uint64
-	StartTime   time.Time
-	EndTime     time.Time
 	Size        int64
 	RecordCount int
 	Sealed      bool
@@ -35,13 +35,13 @@ type SegmentInfo struct {
 
 // IndexEntry represents a single record's location in the WAL
 type IndexEntry struct {
-	Sequence  uint64
+	Timestamp time.Time
 	Segment   string
+	Sequence  uint64
 	Offset    int64
 	Size      int32
-	Timestamp time.Time
 	Checksum  uint32
-	Flags     uint16 // Record flags (deleted, compacted, etc.)
+	Flags     uint16
 }
 
 // NewIndex creates a new WAL index
@@ -479,10 +479,10 @@ func (idx *Index) Load() error {
 			// Skip segments that can't be opened
 			continue
 		}
-		defer func() { _ = file.Close() }()
 
 		// Re-scan segment to rebuild entries
 		_ = idx.scanSegmentForEntries(file, seg.Path)
+		_ = file.Close()
 	}
 
 	return nil

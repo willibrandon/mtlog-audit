@@ -15,37 +15,31 @@ import (
 
 // IntegrityReport contains the results of a WAL integrity check.
 type IntegrityReport struct {
-	Valid             bool
+	LastTimestamp     time.Time
 	TotalRecords      int
 	CorruptedSegments int
 	RecoveredRecords  int
 	LastSequence      uint64
-	LastTimestamp     time.Time
+	Valid             bool
 }
 
 // WAL implements a Write-Ahead Log with guaranteed durability.
 type WAL struct {
-	mu          sync.Mutex
-	path        string
+	segments    *SegmentManager
 	file        *os.File
-	sequence    uint64
-	lastHash    [32]byte
-	segmentSize int64
-	currentSize int64
-	syncMode    SyncMode
-	closed      atomic.Bool
-
-	// Segment management
-	segments *SegmentManager
-
-	// Buffering for group commit
-	buffer      []byte
-	flushTicker *time.Ticker
-	flushStop   chan struct{}
-
-	// Torn-write protection
-	doubleWrite *DoubleWriteBuffer
 	journalFile *os.File
+	doubleWrite *DoubleWriteBuffer
+	flushStop   chan struct{}
+	flushTicker *time.Ticker
+	path        string
+	buffer      []byte
+	sequence    uint64
+	syncMode    SyncMode
+	currentSize int64
+	segmentSize int64
+	mu          sync.Mutex
+	closed      atomic.Bool
+	lastHash    [32]byte
 }
 
 // SyncMode defines when the WAL syncs to disk.
@@ -78,7 +72,7 @@ func New(path string, opts ...Option) (*WAL, error) {
 		syncMode:      SyncImmediate,
 		syncInterval:  100 * time.Millisecond,
 		bufferSize:    4 * 1024 * 1024, // 4MB buffer
-		createDirPerm: 0700,
+		createDirPerm: 0o700,
 	}
 
 	for _, opt := range opts {
@@ -107,7 +101,7 @@ func New(path string, opts ...Option) (*WAL, error) {
 	flags := os.O_CREATE | os.O_RDWR | os.O_APPEND
 
 	// #nosec G304 - WAL path from user configuration
-	file, err := os.OpenFile(activePath, flags, 0600)
+	file, err := os.OpenFile(activePath, flags, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WAL file: %w", err)
 	}
@@ -122,7 +116,7 @@ func New(path string, opts ...Option) (*WAL, error) {
 	// Initialize double-write buffer for torn-write protection
 	journalPath := path + ".journal"
 	// #nosec G304 - journal path derived from user-specified WAL path
-	journalFile, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR, 0600)
+	journalFile, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("failed to open journal file: %w", err)
@@ -541,7 +535,7 @@ func (w *WAL) rotate() error {
 	}
 
 	// #nosec G304 - segment path generated internally from controlled sequence
-	file, err := os.OpenFile(newPath, flags, 0600)
+	file, err := os.OpenFile(newPath, flags, 0o600)
 	if err != nil {
 		return err
 	}

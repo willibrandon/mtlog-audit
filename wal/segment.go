@@ -15,13 +15,13 @@ import (
 
 // Segment represents a single WAL segment file.
 type Segment struct {
+	CreatedAt time.Time
 	Path      string
 	StartSeq  uint64
 	EndSeq    uint64
 	Size      int64
-	CreatedAt time.Time
-	Sealed    bool
 	Version   uint16
+	Sealed    bool
 	Corrupted bool
 }
 

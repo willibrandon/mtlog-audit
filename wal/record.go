@@ -26,22 +26,17 @@ const (
 
 // Record represents a single entry in the WAL.
 type Record struct {
-	// Header
+	EventData   []byte
+	Timestamp   int64
+	Sequence    uint64
 	Magic       uint32
+	Length      uint32
+	CRC32Header uint32
+	CRC32Data   uint32
+	MagicEnd    uint32
 	Version     uint16
 	Flags       uint16
-	Length      uint32
-	Timestamp   int64
-	CRC32Header uint32
-
-	// Payload
-	Sequence  uint64
-	PrevHash  [32]byte
-	EventData []byte
-
-	// Footer
-	CRC32Data uint32
-	MagicEnd  uint32
+	PrevHash    [32]byte
 }
 
 // NewRecord creates a new WAL record from a log event.

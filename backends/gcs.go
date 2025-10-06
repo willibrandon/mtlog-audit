@@ -20,17 +20,17 @@ import (
 
 // GCSBackend implements the Backend interface for Google Cloud Storage
 type GCSBackend struct {
-	config       GCSConfig
+	lastFlush    time.Time
 	client       *storage.Client
 	bucket       *storage.BucketHandle
-	mu           sync.Mutex
-	buffer       []*core.LogEvent
-	lastFlush    time.Time
-	batchSize    int
 	flushTicker  *time.Ticker
 	stopChan     chan struct{}
+	uploadedObjs map[string]string
+	buffer       []*core.LogEvent
+	config       GCSConfig
 	wg           sync.WaitGroup
-	uploadedObjs map[string]string // object name -> MD5 hash for verification
+	batchSize    int
+	mu           sync.Mutex
 }
 
 // NewGCSBackend creates a new GCS backend

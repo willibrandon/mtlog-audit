@@ -14,9 +14,9 @@ import (
 
 // RandomCorruption simulates random data corruption during write operations.
 type RandomCorruption struct {
+	CorruptionType string
 	EventCount     int
-	CorruptAt      int    // Corrupt data after N events (0 = random)
-	CorruptionType string // "bitflip", "truncate", "overwrite"
+	CorruptAt      int
 }
 
 // NewRandomCorruption creates a new random corruption scenario.
@@ -203,7 +203,7 @@ func (r *RandomCorruption) corruptBitFlip(walPath string, data []byte) error {
 		data[bytePos] ^= (1 << bitPos)
 	}
 
-	return os.WriteFile(walPath, data, 0600)
+	return os.WriteFile(walPath, data, 0o600)
 }
 
 // corruptTruncate truncates the file at a random position
@@ -216,7 +216,7 @@ func (r *RandomCorruption) corruptTruncate(walPath string, data []byte) error {
 	// #nosec G404 - weak random acceptable for test corruption
 	truncateAt := len(data)/2 + rand.Intn(len(data)/2)
 
-	return os.WriteFile(walPath, data[:truncateAt], 0600)
+	return os.WriteFile(walPath, data[:truncateAt], 0o600)
 }
 
 // corruptOverwrite overwrites a section with random data
@@ -246,5 +246,5 @@ func (r *RandomCorruption) corruptOverwrite(walPath string, data []byte) error {
 	// Overwrite the section
 	copy(data[startPos:startPos+overwriteSize], randomData)
 
-	return os.WriteFile(walPath, data, 0600)
+	return os.WriteFile(walPath, data, 0o600)
 }

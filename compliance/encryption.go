@@ -22,8 +22,8 @@ type Encryptor interface {
 
 // AESGCMEncryptor implements AES-256-GCM encryption
 type AESGCMEncryptor struct {
-	key    []byte
 	cipher cipher.AEAD
+	key    []byte
 	mu     sync.RWMutex
 }
 
@@ -94,8 +94,8 @@ func (e *AESGCMEncryptor) Algorithm() string {
 
 // ChaCha20Poly1305Encryptor implements ChaCha20-Poly1305 encryption
 type ChaCha20Poly1305Encryptor struct {
-	key    []byte
 	cipher cipher.AEAD
+	key    []byte
 	mu     sync.RWMutex
 }
 
@@ -106,14 +106,14 @@ func NewChaCha20Poly1305Encryptor(key []byte) (*ChaCha20Poly1305Encryptor, error
 			chacha20poly1305.KeySize, len(key))
 	}
 
-	cipher, err := chacha20poly1305.New(key)
+	aead, err := chacha20poly1305.New(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ChaCha20-Poly1305 cipher: %w", err)
 	}
 
 	return &ChaCha20Poly1305Encryptor{
 		key:    key,
-		cipher: cipher,
+		cipher: aead,
 	}, nil
 }
 
@@ -161,7 +161,7 @@ func (e *ChaCha20Poly1305Encryptor) Algorithm() string {
 }
 
 // DeriveKey derives an encryption key from a password using PBKDF2.
-func DeriveKey(password []byte, salt []byte, keyLen int) ([]byte, error) {
+func DeriveKey(password, salt []byte, keyLen int) ([]byte, error) {
 	if len(salt) < 16 {
 		return nil, fmt.Errorf("salt must be at least 16 bytes")
 	}
@@ -209,13 +209,13 @@ type EncryptedRecord struct {
 
 // KeyManager manages encryption keys with rotation support
 type KeyManager struct {
-	mu          sync.RWMutex
-	currentKey  []byte
-	currentID   string
-	keys        map[string][]byte
 	encryptor   Encryptor
-	rotateAfter int64 // Number of encryptions before rotation
+	keys        map[string][]byte
+	currentID   string
+	currentKey  []byte
+	rotateAfter int64
 	counter     int64
+	mu          sync.RWMutex
 }
 
 // NewKeyManager creates a new key manager

@@ -15,30 +15,19 @@ type Option func(*Config) error
 
 // Config holds the audit sink configuration.
 type Config struct {
-	// Core configuration
-	WALPath    string
-	WALOptions []wal.Option
-
-	// Compliance
-	ComplianceProfile string
-	ComplianceOptions []compliance.Option
-
-	// Backends
-	BackendConfigs []backends.Config
-
-	// Resilience
 	FailureHandler        FailureHandler
+	ComplianceProfile     string
+	WALPath               string
+	MetricsOptions        []interface{}
+	WALOptions            []wal.Option
+	ComplianceOptions     []compliance.Option
+	BackendConfigs        []backends.Config
+	CircuitBreakerOptions []interface{}
 	RetryPolicy           RetryPolicy
-	CircuitBreakerOptions []interface{} // Placeholder for resilience.Option
+	GroupCommitSize       int
+	GroupCommitDelay      time.Duration
+	GroupCommit           bool
 	PanicOnFailure        bool
-
-	// Performance
-	GroupCommit      bool
-	GroupCommitSize  int
-	GroupCommitDelay time.Duration
-
-	// Monitoring
-	MetricsOptions []interface{} // Placeholder for monitoring.Option
 }
 
 // FailureHandler is called when audit write fails.

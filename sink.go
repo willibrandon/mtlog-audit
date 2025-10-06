@@ -30,26 +30,26 @@ const (
 // IntegrityReport contains the results of an integrity check.
 type IntegrityReport struct {
 	Timestamp           time.Time
-	Valid               bool
-	TotalRecords        int
-	CorruptedSegments   int
-	WALIntegrity        *wal.IntegrityReport
 	ComplianceIntegrity interface{}
+	WALIntegrity        *wal.IntegrityReport
 	BackendReports      []interface{}
 	BackendErrors       []error
+	TotalRecords        int
+	CorruptedSegments   int
+	Valid               bool
 }
 
 // Sink implements a bulletproof audit sink that guarantees delivery.
 // It implements the core.LogEventSink interface from mtlog.
 type Sink struct {
-	mu         sync.RWMutex
 	wal        *wal.WAL
 	config     *Config
-	closed     bool
 	compliance *compliance.Engine
-	backends   []backends.Backend
 	resilience *resilience.Manager
 	monitoring *monitoring.Monitor
+	backends   []backends.Backend
+	mu         sync.RWMutex
+	closed     bool
 }
 
 // Ensure we implement the interface

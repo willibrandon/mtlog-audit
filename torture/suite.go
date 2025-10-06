@@ -30,10 +30,10 @@ type Scenario interface {
 
 // Config configures the torture test suite.
 type Config struct {
-	Iterations    int
-	StopOnFailure bool
 	TempDir       string
+	Iterations    int
 	Concurrency   int
+	StopOnFailure bool
 	Verbose       bool
 }
 
@@ -41,18 +41,18 @@ type Config struct {
 type Report struct {
 	StartTime  time.Time
 	EndTime    time.Time
-	Iterations int
 	Scenarios  map[string]*ScenarioResult
+	Iterations int
 	Success    bool
 }
 
 // ScenarioResult contains results for a single scenario.
 type ScenarioResult struct {
+	Errors   []error
 	Passed   int
 	Failed   int
-	Errors   []error
 	Duration time.Duration
-	mu       sync.Mutex // For thread-safe updates
+	mu       sync.Mutex
 }
 
 // NewSuite creates a new torture test suite.
@@ -199,7 +199,7 @@ func (s *Suite) RunParallel(workers int) (*Report, error) {
 }
 
 // runScenarioParallel executes a single scenario in parallel
-func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration int, workerID int) {
+func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration, workerID int) {
 	result := report.Scenarios[scenario.Name()]
 	startTime := time.Now()
 
@@ -208,7 +208,7 @@ func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration
 		s.config.TempDir, workerID, iteration, time.Now().UnixNano())
 
 	// #nosec G301 - test directory permissions appropriate for test isolation
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		result.mu.Lock()
 		result.Failed++
 		result.Errors = append(result.Errors, err)

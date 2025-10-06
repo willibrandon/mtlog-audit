@@ -12,20 +12,20 @@ import (
 // DoubleWriteBuffer implements torn-write protection using a journal
 // It ensures that writes are atomic even if the process crashes mid-write
 type DoubleWriteBuffer struct {
-	mu         sync.Mutex
 	journal    *os.File
-	bufferSize int
 	crcTable   *crc32.Table
+	bufferSize int
+	mu         sync.Mutex
 }
 
 // JournalEntry represents a write that needs to be made atomic
 type JournalEntry struct {
-	Magic    uint32 // Magic number to identify valid entries
-	Status   uint8  // 0 = incomplete, 1 = complete, 2 = applied
-	Position int64  // Position in the main WAL file
-	Length   uint32 // Length of the data
-	CRC32    uint32 // CRC32 of the data
-	Data     []byte // The actual data to write
+	Data     []byte
+	Position int64
+	Magic    uint32
+	Length   uint32
+	CRC32    uint32
+	Status   uint8
 }
 
 const (

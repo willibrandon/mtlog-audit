@@ -237,7 +237,7 @@ func TestRecoveryEngine_MarshalUnmarshalRoundtrip(t *testing.T) {
 	// Write to a temp file
 	dir := t.TempDir()
 	walPath := filepath.Join(dir, "roundtrip.wal")
-	if err := os.WriteFile(walPath, marshaled, 0600); err != nil {
+	if err := os.WriteFile(walPath, marshaled, 0o600); err != nil {
 		t.Fatalf("Failed to write file: %v", err)
 	}
 

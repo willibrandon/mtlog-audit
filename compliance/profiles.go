@@ -6,19 +6,19 @@ import (
 
 // Profile defines compliance requirements for different standards
 type Profile struct {
-	Name                string
-	EncryptionRequired  bool
 	EncryptionAlgorithm string
-	SigningRequired     bool
+	Name                string
 	SigningAlgorithm    string
+	MaskSensitive       []string
+	AuditProperties     []string
 	RetentionDays       int
 	MinRetentionDays    int
 	MaxRetentionDays    int
-	MaskSensitive       []string
+	SigningRequired     bool
 	RequiresTamperProof bool
 	RequiresAccessLog   bool
 	RequiresImmutable   bool
-	AuditProperties     []string // Properties that must be included in audit events
+	EncryptionRequired  bool
 }
 
 // Profiles defines all supported compliance profiles

@@ -9,11 +9,11 @@ import (
 
 // Manager coordinates resilience strategies
 type Manager struct {
-	mu              sync.RWMutex
 	retryPolicy     *RetryPolicy
 	circuitBreakers map[string]*CircuitBreaker
 	retryExecutor   *RetryExecutor
 	defaultBreaker  *CircuitBreaker
+	mu              sync.RWMutex
 }
 
 // Option configures the resilience manager
@@ -205,11 +205,11 @@ func (m *Manager) HealthCheck() HealthReport {
 // HealthReport contains health check results
 type HealthReport struct {
 	Timestamp       time.Time
-	Healthy         bool
+	CircuitBreakers map[string]CircuitBreakerStats
 	Issues          []string
 	Warnings        []string
-	CircuitBreakers map[string]CircuitBreakerStats
 	RetryStats      RetryStats
+	Healthy         bool
 }
 
 // BulkExecutor executes bulk operations with resilience

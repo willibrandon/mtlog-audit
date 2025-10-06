@@ -484,7 +484,7 @@ func TestCompactor_CleanupOldSegments(t *testing.T) {
 	dir := t.TempDir()
 	archiveDir := filepath.Join(dir, "archive")
 	// #nosec G301 - test directory permissions appropriate for tests
-	_ = os.MkdirAll(archiveDir, 0755)
+	_ = os.MkdirAll(archiveDir, 0o755)
 
 	// Create old archive files
 	oldTime := time.Now().Add(-30 * 24 * time.Hour) // 30 days old

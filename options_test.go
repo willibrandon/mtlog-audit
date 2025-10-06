@@ -10,8 +10,8 @@ import (
 
 func TestWithBackend(t *testing.T) {
 	tests := []struct {
-		name    string
 		backend backends.Config
+		name    string
 		wantErr bool
 	}{
 		{
@@ -84,7 +84,7 @@ func TestMultipleBackends(t *testing.T) {
 	cfg := defaultConfig()
 
 	// Add multiple backends
-	backends := []backends.Config{
+	backendConfigs := []backends.Config{
 		backends.S3Config{
 			Bucket: "s3-bucket",
 			Region: "us-east-1",
@@ -99,7 +99,7 @@ func TestMultipleBackends(t *testing.T) {
 		},
 	}
 
-	for _, backend := range backends {
+	for _, backend := range backendConfigs {
 		opt := WithBackend(backend)
 		if err := opt(cfg); err != nil {
 			t.Fatalf("Failed to add backend: %v", err)
@@ -182,10 +182,10 @@ func TestWithMetricsOptions(t *testing.T) {
 
 func TestConfigValidation(t *testing.T) {
 	tests := []struct {
-		name    string
 		config  *Config
-		wantErr bool
+		name    string
 		errMsg  string
+		wantErr bool
 	}{
 		{
 			name: "valid config",

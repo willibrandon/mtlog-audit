@@ -67,9 +67,14 @@ func LoadEd25519Signer(privateKeyPath string) (*Ed25519Signer, error) {
 		return nil, fmt.Errorf("not an Ed25519 private key")
 	}
 
+	pubKey, ok := ed25519Key.Public().(ed25519.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("public key is not an Ed25519 public key")
+	}
+
 	return &Ed25519Signer{
 		privateKey: ed25519Key,
-		publicKey:  ed25519Key.Public().(ed25519.PublicKey),
+		publicKey:  pubKey,
 	}, nil
 }
 
@@ -137,19 +142,19 @@ func (s *RSASigner) Algorithm() string {
 
 // SignatureChain maintains a chain of signatures for tamper detection
 type SignatureChain struct {
-	mu         sync.RWMutex
 	signer     Signer
 	lastHash   []byte
 	signatures []ChainedSignature
+	mu         sync.RWMutex
 }
 
 // ChainedSignature represents a signature in the chain
 type ChainedSignature struct {
-	Sequence  uint64
+	Algorithm string
 	DataHash  []byte
 	PrevHash  []byte
 	Signature []byte
-	Algorithm string
+	Sequence  uint64
 }
 
 // NewSignatureChain creates a new signature chain
@@ -230,15 +235,15 @@ func (sc *SignatureChain) Verify() error {
 
 // SignatureRecord wraps audit data with signature information
 type SignatureRecord struct {
-	Data      []byte `json:"data"`
-	Signature string `json:"signature"` // Base64 encoded
+	Signature string `json:"signature"`
 	Algorithm string `json:"algorithm"`
+	PrevHash  string `json:"prev_hash"`
+	Data      []byte `json:"data"`
 	Sequence  uint64 `json:"sequence"`
-	PrevHash  string `json:"prev_hash"` // Base64 encoded
 }
 
 // SignData signs data and returns a signature record
-func SignData(signer Signer, sequence uint64, data []byte, prevHash []byte) (*SignatureRecord, error) {
+func SignData(signer Signer, sequence uint64, data, prevHash []byte) (*SignatureRecord, error) {
 	signature, err := signer.Sign(data)
 	if err != nil {
 		return nil, err

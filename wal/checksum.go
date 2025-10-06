@@ -57,7 +57,10 @@ type CRC32Checksum struct{}
 
 // Calculate computes the CRC32 checksum of the given data.
 func (c *CRC32Checksum) Calculate(data []byte) uint64 {
-	state := checksumPool.Get().(*checksumState)
+	state, ok := checksumPool.Get().(*checksumState)
+	if !ok {
+		panic("checksum pool returned invalid type")
+	}
 	defer checksumPool.Put(state)
 
 	state.crc32.Reset()
@@ -82,7 +85,10 @@ type CRC32CChecksum struct{}
 
 // Calculate computes the CRC32C checksum of the given data.
 func (c *CRC32CChecksum) Calculate(data []byte) uint64 {
-	state := checksumPool.Get().(*checksumState)
+	state, ok := checksumPool.Get().(*checksumState)
+	if !ok {
+		panic("checksum pool returned invalid type")
+	}
 	defer checksumPool.Put(state)
 
 	state.crc32c.Reset()
@@ -106,7 +112,10 @@ type CRC64Checksum struct{}
 
 // Calculate computes the CRC64 checksum of the given data.
 func (c *CRC64Checksum) Calculate(data []byte) uint64 {
-	state := checksumPool.Get().(*checksumState)
+	state, ok := checksumPool.Get().(*checksumState)
+	if !ok {
+		panic("checksum pool returned invalid type")
+	}
 	defer checksumPool.Put(state)
 
 	state.crc64.Reset()
@@ -275,16 +284,15 @@ func (bc *BlockChecksum) VerifyBlocks(data []byte, checksums []uint64) (int, err
 
 // RollingChecksum provides a rolling checksum for streaming data
 type RollingChecksum struct {
+	hasher    hash.Hash64
+	crc32Hash hash.Hash32
 	window    []byte
 	size      int
 	pos       int
 	sum       uint64
 	typ       ChecksumType
-	hasher    hash.Hash64 // Reusable hasher for CRC64
-	crc32Hash hash.Hash32 // Reusable hasher for CRC32
-	// For Adler32-style rolling checksum
-	a uint32
-	b uint32
+	a         uint32
+	b         uint32
 }
 
 // NewRollingChecksum creates a rolling checksum with specified window size
