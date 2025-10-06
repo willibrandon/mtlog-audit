@@ -3,7 +3,9 @@ package backends
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -14,16 +16,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
-	"github.com/aws/aws-sdk-go/aws"
-	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
-	"github.com/aws/aws-sdk-go/aws/session"
-	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
-	"github.com/aws/aws-sdk-go/service/s3"
-	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/willibrandon/mtlog-audit/monitoring"
 	"github.com/willibrandon/mtlog/core"
 )
@@ -31,9 +30,9 @@ import (
 // S3Backend implements AWS S3 storage backend with compliance features
 type S3Backend struct {
 	lastWrite     time.Time
-	client        *s3.S3
-	uploader      *s3manager.Uploader
-	downloader    *s3manager.Downloader
+	client        *s3.Client
+	uploader      *manager.Uploader
+	downloader    *manager.Downloader
 	bucket        string
 	prefix        string
 	region        string
@@ -106,36 +105,53 @@ func WithBatchSize(size int) S3Option {
 }
 
 // NewS3Backend creates a new S3 backend
-func NewS3Backend(config S3Config, opts ...S3Option) (*S3Backend, error) {
-	if err := config.Validate(); err != nil {
+func NewS3Backend(cfg S3Config, opts ...S3Option) (*S3Backend, error) {
+	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid S3 config: %w", err)
 	}
 
-	// Create AWS session
-	awsConfig := &aws.Config{
-		Region: aws.String(config.Region),
+	ctx := context.Background()
+
+	// Load AWS SDK config
+	// For testing with MinIO/LocalStack, check for static credentials first
+	configOpts := []func(*config.LoadOptions) error{
+		config.WithRegion(cfg.Region),
 	}
 
-	// Support LocalStack for testing
-	if endpoint := getS3Endpoint(); endpoint != "" {
-		awsConfig.Endpoint = aws.String(endpoint)
-		awsConfig.S3ForcePathStyle = aws.Bool(true)
+	// Check for static credentials in environment (for testing)
+	if accessKey := os.Getenv("AWS_ACCESS_KEY_ID"); accessKey != "" {
+		if secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY"); secretKey != "" {
+			configOpts = append(configOpts,
+				config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+			)
+		}
 	}
 
-	sess, err := session.NewSession(awsConfig)
+	awsCfg, err := config.LoadDefaultConfig(ctx, configOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create AWS session: %w", err)
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	s3Client := s3.New(sess)
+	// Support LocalStack/MinIO for testing
+	if endpoint := getS3Endpoint(); endpoint != "" {
+		awsCfg.BaseEndpoint = aws.String(endpoint)
+	}
+
+	// Create S3 client with custom options
+	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		// Support LocalStack/MinIO path-style URLs
+		if endpoint := getS3Endpoint(); endpoint != "" {
+			o.UsePathStyle = true
+		}
+	})
 
 	backend := &S3Backend{
 		client:       s3Client,
-		uploader:     s3manager.NewUploader(sess),
-		downloader:   s3manager.NewDownloader(sess),
-		bucket:       config.Bucket,
-		prefix:       config.Prefix,
-		region:       config.Region,
+		uploader:     manager.NewUploader(s3Client),
+		downloader:   manager.NewDownloader(s3Client),
+		bucket:       cfg.Bucket,
+		prefix:       cfg.Prefix,
+		region:       cfg.Region,
 		storageClass: "STANDARD",
 		encryption:   "AES256", // Default to SSE-S3
 		batchSize:    100,
@@ -148,18 +164,18 @@ func NewS3Backend(config S3Config, opts ...S3Option) (*S3Backend, error) {
 	}
 
 	// Apply config options
-	if config.ServerSideEncryption {
+	if cfg.ServerSideEncryption {
 		backend.encryption = "AES256"
 	}
-	if config.Versioning {
+	if cfg.Versioning {
 		backend.versioning = true
 	}
-	if config.ObjectLock {
+	if cfg.ObjectLock {
 		backend.objectLock = true
-		backend.retentionDays = config.RetentionDays
+		backend.retentionDays = cfg.RetentionDays
 	}
-	if config.StorageClass != "" {
-		backend.storageClass = config.StorageClass
+	if cfg.StorageClass != "" {
+		backend.storageClass = cfg.StorageClass
 	}
 
 	// Verify bucket exists and is accessible
@@ -286,17 +302,17 @@ func (s *S3Backend) writeBatch(events []*core.LogEvent) error {
 	key := path.Join(s.prefix, filename)
 
 	// Prepare upload input
-	input := &s3manager.UploadInput{
+	input := &s3.PutObjectInput{
 		Bucket:       aws.String(s.bucket),
 		Key:          aws.String(key),
 		Body:         bytes.NewReader(buffer.Bytes()),
-		StorageClass: aws.String(s.storageClass),
+		StorageClass: types.StorageClass(s.storageClass),
 		ContentType:  aws.String("application/json"),
 	}
 
 	// Add encryption
 	if s.encryption != "" {
-		input.ServerSideEncryption = aws.String(s.encryption)
+		input.ServerSideEncryption = types.ServerSideEncryption(s.encryption)
 		if s.kmsKeyID != "" && s.encryption == "aws:kms" {
 			input.SSEKMSKeyId = aws.String(s.kmsKeyID)
 		}
@@ -305,17 +321,17 @@ func (s *S3Backend) writeBatch(events []*core.LogEvent) error {
 	// Add Object Lock retention
 	if s.objectLock && s.retentionDays > 0 {
 		retainUntil := time.Now().AddDate(0, 0, s.retentionDays)
-		input.ObjectLockMode = aws.String("COMPLIANCE")
+		input.ObjectLockMode = types.ObjectLockModeCompliance
 		input.ObjectLockRetainUntilDate = aws.Time(retainUntil)
-		input.ObjectLockLegalHoldStatus = aws.String("OFF")
+		input.ObjectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOff
 	}
 
 	// Add metadata
-	input.Metadata = map[string]*string{
-		"EventCount": aws.String(fmt.Sprintf("%d", len(events))),
-		"FirstEvent": aws.String(events[0].Timestamp.Format(time.RFC3339)),
-		"LastEvent":  aws.String(events[len(events)-1].Timestamp.Format(time.RFC3339)),
-		"Compressed": aws.String(fmt.Sprintf("%v", s.compress)),
+	input.Metadata = map[string]string{
+		"EventCount": fmt.Sprintf("%d", len(events)),
+		"FirstEvent": events[0].Timestamp.Format(time.RFC3339),
+		"LastEvent":  events[len(events)-1].Timestamp.Format(time.RFC3339),
+		"Compressed": fmt.Sprintf("%v", s.compress),
 	}
 
 	// Upload with retry
@@ -328,11 +344,12 @@ func (s *S3Backend) writeBatch(events []*core.LogEvent) error {
 }
 
 // uploadWithRetry uploads with exponential backoff retry
-func (s *S3Backend) uploadWithRetry(input *s3manager.UploadInput, maxRetries int) (*s3manager.UploadOutput, error) {
+func (s *S3Backend) uploadWithRetry(input *s3.PutObjectInput, maxRetries int) (*s3.PutObjectOutput, error) {
 	var lastErr error
+	ctx := context.Background()
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		output, err := s.uploader.Upload(input)
+		output, err := s.client.PutObject(ctx, input)
 		if err == nil {
 			monitoring.RecordRetry("s3_upload", true)
 			return output, nil
@@ -340,10 +357,11 @@ func (s *S3Backend) uploadWithRetry(input *s3manager.UploadInput, maxRetries int
 
 		lastErr = err
 
-		// Check if error is retryable
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case s3.ErrCodeNoSuchBucket:
+		// Check if error is retryable using smithy errors
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "NoSuchBucket":
 				return nil, fmt.Errorf("bucket does not exist: %w", err)
 			case "AccessDenied":
 				return nil, fmt.Errorf("access denied: %w", err)
@@ -366,6 +384,8 @@ func (s *S3Backend) Read(start, end time.Time) ([]*core.LogEvent, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	ctx := context.Background()
+
 	// List objects in the time range
 	prefix := s.generateTimeRangePrefix(start, end)
 
@@ -375,8 +395,14 @@ func (s *S3Backend) Read(start, end time.Time) ([]*core.LogEvent, error) {
 	}
 
 	var events []*core.LogEvent
+	paginator := s3.NewListObjectsV2Paginator(s.client, input)
 
-	err := s.client.ListObjectsV2Pages(input, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, &BackendError{Backend: "s3", Op: "list", Err: err}
+		}
+
 		for _, obj := range page.Contents {
 			// Download and parse each object
 			objEvents, err := s.downloadAndParse(*obj.Key)
@@ -393,11 +419,6 @@ func (s *S3Backend) Read(start, end time.Time) ([]*core.LogEvent, error) {
 				}
 			}
 		}
-		return !lastPage
-	})
-
-	if err != nil {
-		return nil, &BackendError{Backend: "s3", Op: "list", Err: err}
 	}
 
 	return events, nil
@@ -405,9 +426,11 @@ func (s *S3Backend) Read(start, end time.Time) ([]*core.LogEvent, error) {
 
 // downloadAndParse downloads and parses an S3 object
 func (s *S3Backend) downloadAndParse(key string) ([]*core.LogEvent, error) {
+	ctx := context.Background()
+
 	// Download object to buffer
-	buff := &aws.WriteAtBuffer{}
-	_, err := s.downloader.Download(buff, &s3.GetObjectInput{
+	buffer := manager.NewWriteAtBuffer([]byte{})
+	_, err := s.downloader.Download(ctx, buffer, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 	})
@@ -415,12 +438,11 @@ func (s *S3Backend) downloadAndParse(key string) ([]*core.LogEvent, error) {
 		return nil, err
 	}
 
-	buffer := bytes.NewBuffer(buff.Bytes())
+	reader := io.Reader(bytes.NewBuffer(buffer.Bytes()))
 
 	// Decompress if needed
-	reader := io.Reader(buffer)
 	if path.Ext(key) == ".gz" {
-		gzReader, err := gzip.NewReader(buffer)
+		gzReader, err := gzip.NewReader(bytes.NewBuffer(buffer.Bytes()))
 		if err != nil {
 			return nil, err
 		}
@@ -449,6 +471,8 @@ func (s *S3Backend) downloadAndParse(key string) ([]*core.LogEvent, error) {
 
 // VerifyIntegrity verifies the integrity of S3 data
 func (s *S3Backend) VerifyIntegrity() (*IntegrityReport, error) {
+	ctx := context.Background()
+
 	report := &IntegrityReport{
 		Timestamp: time.Now(),
 		Backend:   "s3",
@@ -464,7 +488,14 @@ func (s *S3Backend) VerifyIntegrity() (*IntegrityReport, error) {
 	var totalSize int64
 	var objectCount int64
 
-	err := s.client.ListObjectsV2Pages(input, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
+	paginator := s3.NewListObjectsV2Paginator(s.client, input)
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, &BackendError{Backend: "s3", Op: "verify", Err: err}
+		}
+
 		for _, obj := range page.Contents {
 			objectCount++
 			totalSize += *obj.Size
@@ -475,7 +506,7 @@ func (s *S3Backend) VerifyIntegrity() (*IntegrityReport, error) {
 				Key:    obj.Key,
 			}
 
-			headOutput, err := s.client.HeadObject(headInput)
+			headOutput, err := s.client.HeadObject(ctx, headInput)
 			if err != nil {
 				report.Errors = append(report.Errors,
 					fmt.Sprintf("Failed to head object %s: %v", *obj.Key, err))
@@ -484,14 +515,14 @@ func (s *S3Backend) VerifyIntegrity() (*IntegrityReport, error) {
 			}
 
 			// Check encryption
-			if s.encryption != "" && headOutput.ServerSideEncryption == nil {
+			if s.encryption != "" && headOutput.ServerSideEncryption == "" {
 				report.Errors = append(report.Errors,
 					fmt.Sprintf("Object %s is not encrypted", *obj.Key))
 				report.Valid = false
 			}
 
 			// Check Object Lock
-			if s.objectLock && headOutput.ObjectLockMode == nil {
+			if s.objectLock && headOutput.ObjectLockMode == "" {
 				report.Errors = append(report.Errors,
 					fmt.Sprintf("Object %s does not have Object Lock", *obj.Key))
 				report.Valid = false
@@ -499,11 +530,6 @@ func (s *S3Backend) VerifyIntegrity() (*IntegrityReport, error) {
 
 			report.VerifiedRecords++
 		}
-		return !lastPage
-	})
-
-	if err != nil {
-		return nil, &BackendError{Backend: "s3", Op: "verify", Err: err}
 	}
 
 	report.TotalRecords = objectCount
@@ -540,17 +566,18 @@ func (s *S3Backend) Close() error {
 
 // verifyBucket verifies the bucket exists and is accessible
 func (s *S3Backend) verifyBucket() error {
-	_, err := s.client.HeadBucket(&s3.HeadBucketInput{
+	ctx := context.Background()
+
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(s.bucket),
 	})
 
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case s3.ErrCodeNoSuchBucket:
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "NoSuchBucket", "NotFound":
 				// Try to create the bucket
-				return s.createBucket()
-			case "NotFound":
 				return s.createBucket()
 			}
 		}
@@ -562,14 +589,16 @@ func (s *S3Backend) verifyBucket() error {
 
 // createBucket creates the S3 bucket
 func (s *S3Backend) createBucket() error {
+	ctx := context.Background()
+
 	input := &s3.CreateBucketInput{
 		Bucket: aws.String(s.bucket),
 	}
 
 	// Add location constraint for non-us-east-1 regions
 	if s.region != "us-east-1" {
-		input.CreateBucketConfiguration = &s3.CreateBucketConfiguration{
-			LocationConstraint: aws.String(s.region),
+		input.CreateBucketConfiguration = &types.CreateBucketConfiguration{
+			LocationConstraint: types.BucketLocationConstraint(s.region),
 		}
 	}
 
@@ -578,33 +607,37 @@ func (s *S3Backend) createBucket() error {
 		input.ObjectLockEnabledForBucket = aws.Bool(true)
 	}
 
-	_, err := s.client.CreateBucket(input)
+	_, err := s.client.CreateBucket(ctx, input)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == s3.ErrCodeBucketAlreadyExists ||
-				aerr.Code() == s3.ErrCodeBucketAlreadyOwnedByYou {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "BucketAlreadyExists", "BucketAlreadyOwnedByYou":
 				return nil // Bucket already exists
 			}
 		}
 		return fmt.Errorf("failed to create bucket: %w", err)
 	}
 
-	// Wait for bucket to be available
-	return s.client.WaitUntilBucketExists(&s3.HeadBucketInput{
+	// Wait for bucket to be available using waiter
+	waiter := s3.NewBucketExistsWaiter(s.client)
+	return waiter.Wait(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(s.bucket),
-	})
+	}, 2*time.Minute)
 }
 
 // enableVersioning enables versioning on the bucket
 func (s *S3Backend) enableVersioning() error {
+	ctx := context.Background()
+
 	input := &s3.PutBucketVersioningInput{
 		Bucket: aws.String(s.bucket),
-		VersioningConfiguration: &s3.VersioningConfiguration{
-			Status: aws.String(s3.BucketVersioningStatusEnabled),
+		VersioningConfiguration: &types.VersioningConfiguration{
+			Status: types.BucketVersioningStatusEnabled,
 		},
 	}
 
-	_, err := s.client.PutBucketVersioning(input)
+	_, err := s.client.PutBucketVersioning(ctx, input)
 	return err
 }
 
@@ -614,20 +647,28 @@ func (s *S3Backend) configureObjectLock() error {
 		return nil // No retention configured
 	}
 
+	ctx := context.Background()
+
+	// Validate retention days before conversion
+	const maxRetentionDays = 36500 // 100 years - reasonable upper bound
+	if s.retentionDays > maxRetentionDays {
+		return fmt.Errorf("retention days %d exceeds maximum %d", s.retentionDays, maxRetentionDays)
+	}
+
 	input := &s3.PutObjectLockConfigurationInput{
 		Bucket: aws.String(s.bucket),
-		ObjectLockConfiguration: &s3.ObjectLockConfiguration{
-			ObjectLockEnabled: aws.String(s3.ObjectLockEnabledEnabled),
-			Rule: &s3.ObjectLockRule{
-				DefaultRetention: &s3.DefaultRetention{
-					Mode: aws.String(s3.ObjectLockRetentionModeCompliance),
-					Days: aws.Int64(int64(s.retentionDays)),
+		ObjectLockConfiguration: &types.ObjectLockConfiguration{
+			ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+			Rule: &types.ObjectLockRule{
+				DefaultRetention: &types.DefaultRetention{
+					Mode: types.ObjectLockRetentionModeCompliance,
+					Days: aws.Int32(int32(s.retentionDays)),
 				},
 			},
 		},
 	}
 
-	_, err := s.client.PutObjectLockConfiguration(input)
+	_, err := s.client.PutObjectLockConfiguration(ctx, input)
 	return err
 }
 

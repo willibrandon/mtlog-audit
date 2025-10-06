@@ -97,7 +97,7 @@ docker-test: docker-up
 integration-test:
 	@echo "Running integration tests..."
 	@echo "Make sure Docker services are running (run 'make docker-up' if not)"
-	go test -tags=integration -v ./integration/...
+	@export $$(grep -v '^#' docker/.env | grep -v '^$$' | xargs) && go test -tags=integration -v ./integration/...
 
 # Quick test with local services
 test-with-services: docker-up test docker-down

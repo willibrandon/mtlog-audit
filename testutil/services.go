@@ -3,19 +3,18 @@ package testutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 
-	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
-	"github.com/aws/aws-sdk-go/aws"
-	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
-	"github.com/aws/aws-sdk-go/aws/session"
-	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 )
 
 // ServiceChecker checks if test services are available
@@ -92,7 +91,9 @@ func (sc *ServiceChecker) IsFakeGCSAvailable() bool {
 }
 
 // GetMinIOClient returns a configured S3 client for MinIO
-func GetMinIOClient() (*s3.S3, error) {
+func GetMinIOClient() (*s3.Client, error) {
+	ctx := context.Background()
+
 	endpoint := os.Getenv("MINIO_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "http://localhost:9000"
@@ -108,24 +109,30 @@ func GetMinIOClient() (*s3.S3, error) {
 		secretKey = "minioadmin"
 	}
 
-	sess, err := session.NewSession(&aws.Config{
-		Endpoint:         aws.String(endpoint),
-		Region:           aws.String("us-east-1"),
-		Credentials:      credentials.NewStaticCredentials(accessKey, secretKey, ""),
-		S3ForcePathStyle: aws.Bool(true),
-		DisableSSL:       aws.Bool(true),
-	})
+	// Load config with static credentials
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion("us-east-1"),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	return s3.New(sess), nil
+	// Create S3 client with custom endpoint for MinIO
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(endpoint)
+		o.UsePathStyle = true
+	})
+
+	return client, nil
 }
 
 // CreateTestBucket creates a test bucket with appropriate settings
-func CreateTestBucket(client *s3.S3, bucket string, enableVersioning, enableEncryption bool) error {
+func CreateTestBucket(client *s3.Client, bucket string, enableVersioning, enableEncryption bool) error {
+	ctx := context.Background()
+
 	// Create bucket
-	_, err := client.CreateBucket(&s3.CreateBucketInput{
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
@@ -137,10 +144,10 @@ func CreateTestBucket(client *s3.S3, bucket string, enableVersioning, enableEncr
 
 	// Enable versioning if requested
 	if enableVersioning {
-		_, err = client.PutBucketVersioning(&s3.PutBucketVersioningInput{
+		_, err = client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
 			Bucket: aws.String(bucket),
-			VersioningConfiguration: &s3.VersioningConfiguration{
-				Status: aws.String("Enabled"),
+			VersioningConfiguration: &types.VersioningConfiguration{
+				Status: types.BucketVersioningStatusEnabled,
 			},
 		})
 		if err != nil {
@@ -150,13 +157,13 @@ func CreateTestBucket(client *s3.S3, bucket string, enableVersioning, enableEncr
 
 	// Enable encryption if requested
 	if enableEncryption {
-		_, err = client.PutBucketEncryption(&s3.PutBucketEncryptionInput{
+		_, err = client.PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
 			Bucket: aws.String(bucket),
-			ServerSideEncryptionConfiguration: &s3.ServerSideEncryptionConfiguration{
-				Rules: []*s3.ServerSideEncryptionRule{
+			ServerSideEncryptionConfiguration: &types.ServerSideEncryptionConfiguration{
+				Rules: []types.ServerSideEncryptionRule{
 					{
-						ApplyServerSideEncryptionByDefault: &s3.ServerSideEncryptionByDefault{
-							SSEAlgorithm: aws.String(s3.ServerSideEncryptionAes256),
+						ApplyServerSideEncryptionByDefault: &types.ServerSideEncryptionByDefault{
+							SSEAlgorithm: types.ServerSideEncryptionAes256,
 						},
 					},
 				},
@@ -171,8 +178,10 @@ func CreateTestBucket(client *s3.S3, bucket string, enableVersioning, enableEncr
 }
 
 // VerifyS3Encryption checks if an object is encrypted
-func VerifyS3Encryption(client *s3.S3, bucket, key string) (bool, error) {
-	resp, err := client.HeadObject(&s3.HeadObjectInput{
+func VerifyS3Encryption(client *s3.Client, bucket, key string) (bool, error) {
+	ctx := context.Background()
+
+	resp, err := client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -181,23 +190,25 @@ func VerifyS3Encryption(client *s3.S3, bucket, key string) (bool, error) {
 	}
 
 	// Check if server-side encryption is enabled
-	return resp.ServerSideEncryption != nil && *resp.ServerSideEncryption == s3.ServerSideEncryptionAes256, nil
+	return resp.ServerSideEncryption == types.ServerSideEncryptionAes256, nil
 }
 
 // VerifyS3ObjectLock checks if object lock is configured
-func VerifyS3ObjectLock(client *s3.S3, bucket string) (bool, *time.Duration, error) {
-	resp, err := client.GetObjectLockConfiguration(&s3.GetObjectLockConfigurationInput{
+func VerifyS3ObjectLock(client *s3.Client, bucket string) (bool, *time.Duration, error) {
+	ctx := context.Background()
+
+	resp, err := client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		return false, nil, err
 	}
 
-	if resp.ObjectLockConfiguration == nil || resp.ObjectLockConfiguration.ObjectLockEnabled == nil {
+	if resp.ObjectLockConfiguration == nil {
 		return false, nil, nil
 	}
 
-	enabled := *resp.ObjectLockConfiguration.ObjectLockEnabled == s3.ObjectLockEnabledEnabled
+	enabled := resp.ObjectLockConfiguration.ObjectLockEnabled == types.ObjectLockEnabledEnabled
 
 	var retention *time.Duration
 	if resp.ObjectLockConfiguration.Rule != nil &&
@@ -212,27 +223,33 @@ func VerifyS3ObjectLock(client *s3.S3, bucket string) (bool, *time.Duration, err
 }
 
 // CleanupTestBucket removes all objects and deletes the bucket
-func CleanupTestBucket(client *s3.S3, bucket string) error {
-	// List and delete all objects
-	listResp, err := client.ListObjectsV2(&s3.ListObjectsV2Input{
+func CleanupTestBucket(client *s3.Client, bucket string) error {
+	ctx := context.Background()
+
+	// List and delete all objects using paginator
+	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to list objects: %w", err)
-	}
 
-	for _, obj := range listResp.Contents {
-		_, err = client.DeleteObject(&s3.DeleteObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    obj.Key,
-		})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to delete object %s: %w", *obj.Key, err)
+			return fmt.Errorf("failed to list objects: %w", err)
+		}
+
+		for _, obj := range page.Contents {
+			_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(bucket),
+				Key:    obj.Key,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to delete object %s: %w", *obj.Key, err)
+			}
 		}
 	}
 
 	// Delete the bucket
-	_, err = client.DeleteBucket(&s3.DeleteBucketInput{
+	_, err := client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
@@ -266,6 +283,12 @@ func isAlreadyExistsError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return err.Error() == s3.ErrCodeBucketAlreadyExists ||
-		err.Error() == s3.ErrCodeBucketAlreadyOwnedByYou
+
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		code := apiErr.ErrorCode()
+		return code == "BucketAlreadyExists" || code == "BucketAlreadyOwnedByYou"
+	}
+
+	return false
 }

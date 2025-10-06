@@ -4,12 +4,14 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/stretchr/testify/require"
 	audit "github.com/willibrandon/mtlog-audit"
 	"github.com/willibrandon/mtlog-audit/backends"
@@ -71,7 +73,8 @@ func TestS3BackendCompliance(t *testing.T) {
 		time.Sleep(2 * time.Second)
 
 		// List objects in bucket
-		listResp, err := s3Client.ListObjectsV2(&s3.ListObjectsV2Input{
+		ctx := context.Background()
+		listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket: aws.String(testBucket),
 			Prefix: aws.String("encrypted/"),
 		})
@@ -80,16 +83,14 @@ func TestS3BackendCompliance(t *testing.T) {
 
 		// Verify encryption on each object
 		for _, obj := range listResp.Contents {
-			headResp, err := s3Client.HeadObject(&s3.HeadObjectInput{
+			headResp, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
 				Bucket: aws.String(testBucket),
 				Key:    obj.Key,
 			})
 			require.NoError(t, err)
 
 			// Check server-side encryption
-			require.NotNil(t, headResp.ServerSideEncryption,
-				"Object %s is not encrypted", *obj.Key)
-			require.Equal(t, s3.ServerSideEncryptionAes256, *headResp.ServerSideEncryption,
+			require.Equal(t, types.ServerSideEncryptionAes256, headResp.ServerSideEncryption,
 				"Object %s has wrong encryption type", *obj.Key)
 		}
 	})
@@ -105,12 +106,12 @@ func TestS3BackendCompliance(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify versioning is enabled
-		versionResp, err := s3Client.GetBucketVersioning(&s3.GetBucketVersioningInput{
+		ctx := context.Background()
+		versionResp, err := s3Client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 			Bucket: aws.String(versionBucket),
 		})
 		require.NoError(t, err)
-		require.NotNil(t, versionResp.Status)
-		require.Equal(t, "Enabled", *versionResp.Status, "Versioning not enabled")
+		require.Equal(t, types.BucketVersioningStatusEnabled, versionResp.Status, "Versioning not enabled")
 
 		// Create sink with versioning
 		tempDir := t.TempDir()
@@ -150,7 +151,8 @@ func TestS3BackendCompliance(t *testing.T) {
 		}()
 
 		// Create bucket with object lock configuration
-		_, err := s3Client.CreateBucket(&s3.CreateBucketInput{
+		ctx := context.Background()
+		_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{
 			Bucket:                     aws.String(lockBucket),
 			ObjectLockEnabledForBucket: aws.Bool(true),
 		})
@@ -160,14 +162,14 @@ func TestS3BackendCompliance(t *testing.T) {
 		}
 
 		// Configure object lock retention
-		_, err = s3Client.PutObjectLockConfiguration(&s3.PutObjectLockConfigurationInput{
+		_, err = s3Client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
 			Bucket: aws.String(lockBucket),
-			ObjectLockConfiguration: &s3.ObjectLockConfiguration{
-				ObjectLockEnabled: aws.String(s3.ObjectLockEnabledEnabled),
-				Rule: &s3.ObjectLockRule{
-					DefaultRetention: &s3.DefaultRetention{
-						Mode: aws.String(s3.ObjectLockRetentionModeCompliance),
-						Days: aws.Int64(2190), // 6 years for HIPAA
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Mode: types.ObjectLockRetentionModeCompliance,
+						Days: aws.Int32(2190), // 6 years for HIPAA
 					},
 				},
 			},
@@ -175,13 +177,13 @@ func TestS3BackendCompliance(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify object lock configuration
-		lockConfig, err := s3Client.GetObjectLockConfiguration(&s3.GetObjectLockConfigurationInput{
+		lockConfig, err := s3Client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
 			Bucket: aws.String(lockBucket),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, lockConfig.ObjectLockConfiguration)
-		require.Equal(t, s3.ObjectLockEnabledEnabled,
-			*lockConfig.ObjectLockConfiguration.ObjectLockEnabled)
+		require.Equal(t, types.ObjectLockEnabledEnabled,
+			lockConfig.ObjectLockConfiguration.ObjectLockEnabled)
 
 		// Create sink with object lock
 		tempDir := t.TempDir()
@@ -324,7 +326,8 @@ func TestS3BackendIntegrityVerification(t *testing.T) {
 	// - Server-side encryption is applied to objects
 	// - Content-Type headers are properly set
 
-	listResp, err := s3Client.ListObjectsV2(&s3.ListObjectsV2Input{
+	ctx := context.Background()
+	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket: aws.String(testBucket),
 		Prefix: aws.String("audit/"),
 	})
@@ -332,7 +335,7 @@ func TestS3BackendIntegrityVerification(t *testing.T) {
 
 	for _, obj := range listResp.Contents {
 		// Verify each object
-		headResp, err := s3Client.HeadObject(&s3.HeadObjectInput{
+		headResp, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket: aws.String(testBucket),
 			Key:    obj.Key,
 		})
@@ -343,7 +346,7 @@ func TestS3BackendIntegrityVerification(t *testing.T) {
 		require.NotEmpty(t, *headResp.ETag, "Empty ETag")
 
 		// Check encryption
-		require.NotNil(t, headResp.ServerSideEncryption, "Object not encrypted")
+		require.NotEqual(t, types.ServerSideEncryption(""), headResp.ServerSideEncryption, "Object not encrypted")
 
 		// Check content type
 		if headResp.ContentType != nil {
