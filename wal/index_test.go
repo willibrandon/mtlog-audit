@@ -13,11 +13,12 @@ import (
 
 // Helper function to write real WAL records to a segment file
 func writeTestRecords(t *testing.T, path string, startSeq, endSeq uint64) {
-	file, err := os.Create(path)
+	// #nosec G304 - test file path from TempDir
+	file, err := os.Create(path) // #nosec G304 - controlled path
 	if err != nil {
 		t.Fatalf("Failed to create segment file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var prevHash [32]byte
 	baseTime := time.Now().Add(-2 * time.Hour)
@@ -25,6 +26,7 @@ func writeTestRecords(t *testing.T, path string, startSeq, endSeq uint64) {
 	for seq := startSeq; seq <= endSeq; seq++ {
 		// Create a realistic log event
 		event := &core.LogEvent{
+			// #nosec G115 - test sequence index
 			Timestamp:       baseTime.Add(time.Duration(seq) * time.Second),
 			Level:           core.InformationLevel,
 			MessageTemplate: fmt.Sprintf("Test log message %d", seq),
@@ -112,9 +114,9 @@ func TestIndex_Build(t *testing.T) {
 	}
 
 	// Verify ACTUAL sequence range from REAL records
-	min, max := idx.GetSequenceRange()
-	if min != 1 || max != 200 {
-		t.Errorf("Expected sequence range 1-200, got %d-%d", min, max)
+	minSeq, maxSeq := idx.GetSequenceRange()
+	if minSeq != 1 || maxSeq != 200 {
+		t.Errorf("Expected sequence range 1-200, got %d-%d", minSeq, maxSeq)
 	}
 
 	// Verify we can find specific sequences
@@ -366,17 +368,19 @@ func TestIndex_DeletedRecordHandling(t *testing.T) {
 	}
 
 	// Write records with different flags
+	// #nosec G304 - test file path from TempDir
 	file, err := os.Create(segmentPath)
 	if err != nil {
 		t.Fatalf("Failed to create segment file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var prevHash [32]byte
 	baseTime := time.Now().Add(-1 * time.Hour)
 
 	for seq := uint64(1); seq <= 10; seq++ {
 		event := &core.LogEvent{
+			// #nosec G115 - test sequence index
 			Timestamp:       baseTime.Add(time.Duration(seq) * time.Second),
 			Level:           core.InformationLevel,
 			MessageTemplate: fmt.Sprintf("Test log message %d", seq),
@@ -486,6 +490,7 @@ func TestIndex_VersionValidation(t *testing.T) {
 	segmentPath := filepath.Join(dir, "test-001.wal")
 
 	// Create a segment with an incompatible version
+	// #nosec G304 - test file path from TempDir
 	file, err := os.Create(segmentPath)
 	if err != nil {
 		t.Fatalf("Failed to create segment file: %v", err)
@@ -497,6 +502,7 @@ func TestIndex_VersionValidation(t *testing.T) {
 	binary.LittleEndian.PutUint16(headerBuf[4:6], 999)  // Wrong version!
 	binary.LittleEndian.PutUint16(headerBuf[6:8], 0)    // Flags
 	binary.LittleEndian.PutUint32(headerBuf[8:12], 100) // Length
+	// #nosec G115 - timestamp conversion for test
 	binary.LittleEndian.PutUint64(headerBuf[12:20], uint64(time.Now().UnixNano()))
 	binary.LittleEndian.PutUint32(headerBuf[20:24], 0x12345678) // CRC
 
@@ -505,12 +511,12 @@ func TestIndex_VersionValidation(t *testing.T) {
 	}
 
 	// Write sequence and some data
-	binary.Write(file, binary.LittleEndian, uint64(1))
-	file.Write(make([]byte, 32))  // prev hash
-	file.Write(make([]byte, 100)) // data
-	file.Write(make([]byte, 8))   // crc + footer
+	_ = binary.Write(file, binary.LittleEndian, uint64(1))
+	_, _ = file.Write(make([]byte, 32))  // prev hash
+	_, _ = file.Write(make([]byte, 100)) // data
+	_, _ = file.Write(make([]byte, 8))   // crc + footer
 
-	file.Close()
+	_ = file.Close()
 
 	// Try to build index with incompatible version
 	segment := &Segment{
@@ -551,12 +557,14 @@ func BenchmarkIndex_FindBySequence(b *testing.B) {
 		idx.AddEntry(IndexEntry{
 			Sequence: i,
 			Segment:  "test.wal",
-			Offset:   int64(i * 100),
+			// #nosec G115 - test offset
+			Offset: int64(i * 100),
 		})
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		// #nosec G115 - test sequence
 		seq := uint64(i%10000) + 1
 		_, _ = idx.FindBySequence(seq)
 	}

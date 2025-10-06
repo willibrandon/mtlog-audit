@@ -1,3 +1,4 @@
+// Package performance provides high-performance primitives for audit logging.
 package performance
 
 import (

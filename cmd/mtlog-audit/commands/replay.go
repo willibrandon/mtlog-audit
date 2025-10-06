@@ -43,7 +43,7 @@ It can be used for debugging, analysis, or reprocessing of audit events.`,
 
   # Save output to file
   mtlog-audit replay --wal /var/audit/mtlog.wal --output events.json`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			return runReplay(walPath, startTime, endTime, format, output)
 		},
 	}
@@ -54,7 +54,7 @@ It can be used for debugging, analysis, or reprocessing of audit events.`,
 	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, csv)")
 	cmd.Flags().StringVar(&output, "output", "", "Output file (default: stdout)")
 
-	cmd.MarkFlagRequired("wal")
+	_ = cmd.MarkFlagRequired("wal")
 
 	return cmd
 }
@@ -133,7 +133,7 @@ func runReplay(walPath, startTimeStr, endTimeStr, format, output string) error {
 		fmt.Print("Continue anyway? (y/N): ")
 
 		var response string
-		fmt.Scanln(&response)
+		_, _ = fmt.Scanln(&response)
 		if response != "y" && response != "Y" {
 			return fmt.Errorf("replay cancelled due to integrity issues")
 		}
@@ -146,14 +146,14 @@ func runReplay(walPath, startTimeStr, endTimeStr, format, output string) error {
 	fmt.Println()
 
 	// Close the verification sink before reading
-	verifySink.Close()
+	_ = verifySink.Close()
 
 	// Now read events directly from the WAL file
 	reader, err := wal.NewReader(walPath)
 	if err != nil {
 		return fmt.Errorf("failed to create reader: %w", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	var events []*core.LogEvent
 	if startTime.IsZero() && endTime.IsZero() {
@@ -192,11 +192,11 @@ func outputJSON(events []*core.LogEvent, outputFile string) error {
 	var writer io.Writer = os.Stdout
 
 	if outputFile != "" {
-		file, err := os.Create(outputFile)
+		file, err := os.Create(outputFile) // #nosec G304 - user-specified output path
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		writer = file
 	}
 
@@ -216,27 +216,27 @@ func outputText(events []*core.LogEvent, outputFile string) error {
 	var writer io.Writer = os.Stdout
 
 	if outputFile != "" {
-		file, err := os.Create(outputFile)
+		file, err := os.Create(outputFile) // #nosec G304 - user-specified output path
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		writer = file
 	}
 
 	for _, event := range events {
 		levelStr := formatLevel(event.Level)
-		fmt.Fprintf(writer, "[%s] [%s] %s\n",
+		_, _ = fmt.Fprintf(writer, "[%s] [%s] %s\n",
 			event.Timestamp.Format(time.RFC3339),
 			levelStr,
 			event.RenderMessage()) // Properly render message with properties
 
 		if len(event.Properties) > 0 {
 			for k, v := range event.Properties {
-				fmt.Fprintf(writer, "  %s: %v\n", k, v)
+				_, _ = fmt.Fprintf(writer, "  %s: %v\n", k, v)
 			}
 		}
-		fmt.Fprintln(writer)
+		_, _ = fmt.Fprintln(writer)
 	}
 
 	return nil
@@ -246,11 +246,11 @@ func outputCSV(events []*core.LogEvent, outputFile string) error {
 	var writer io.Writer = os.Stdout
 
 	if outputFile != "" {
-		file, err := os.Create(outputFile)
+		file, err := os.Create(outputFile) // #nosec G304 - user-specified output path
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		writer = file
 	}
 

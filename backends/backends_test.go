@@ -133,11 +133,15 @@ func TestGCSConfigValidation(t *testing.T) {
 
 func TestS3BackendWithMockCredentials(t *testing.T) {
 	// Set mock AWS credentials to avoid the deprecated credential chain error
-	os.Setenv("AWS_ACCESS_KEY_ID", "mock-access-key")
-	os.Setenv("AWS_SECRET_ACCESS_KEY", "mock-secret-key")
+	if err := os.Setenv("AWS_ACCESS_KEY_ID", "mock-access-key"); err != nil {
+		t.Fatalf("Failed to set AWS_ACCESS_KEY_ID: %v", err)
+	}
+	if err := os.Setenv("AWS_SECRET_ACCESS_KEY", "mock-secret-key"); err != nil {
+		t.Fatalf("Failed to set AWS_SECRET_ACCESS_KEY: %v", err)
+	}
 	defer func() {
-		os.Unsetenv("AWS_ACCESS_KEY_ID")
-		os.Unsetenv("AWS_SECRET_ACCESS_KEY")
+		_ = os.Unsetenv("AWS_ACCESS_KEY_ID")
+		_ = os.Unsetenv("AWS_SECRET_ACCESS_KEY")
 	}()
 
 	config := S3Config{
@@ -149,7 +153,7 @@ func TestS3BackendWithMockCredentials(t *testing.T) {
 	backend, err := Create(config)
 	if err == nil {
 		// If it succeeds (unlikely without real bucket), close it
-		backend.Close()
+		_ = backend.Close()
 	} else {
 		// We expect an error about bucket not existing, not about credentials
 		if contains(err.Error(), "NoCredentialProviders") || contains(err.Error(), "Deprecated") {
@@ -171,7 +175,11 @@ func TestFilesystemBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create filesystem backend: %v", err)
 	}
-	defer backend.Close()
+	defer func() {
+		if err := backend.Close(); err != nil {
+			t.Errorf("Failed to close backend: %v", err)
+		}
+	}()
 
 	// Test writing an event
 	event := &core.LogEvent{

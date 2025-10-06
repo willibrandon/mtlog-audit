@@ -18,7 +18,7 @@ func main() {
 	if err != nil {
 		panic("Failed to initialize audit sink: " + err.Error())
 	}
-	defer auditSink.Close()
+	defer func() { _ = auditSink.Close() }()
 
 	// Create logger using mtlog.New() with functional options
 	logger := mtlog.New(

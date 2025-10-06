@@ -15,7 +15,7 @@ func TestWALIntegrity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	walPath := filepath.Join(tmpDir, "test.wal")
 
@@ -61,13 +61,13 @@ func TestWALIntegrity(t *testing.T) {
 	}
 
 	// Close and reopen
-	w.Close()
+	_ = w.Close()
 
 	w2, err := New(walPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w2.Close()
+	defer func() { _ = w2.Close() }()
 
 	// Verify after recovery
 	if err := w2.VerifyIntegrity(); err != nil {
@@ -86,7 +86,7 @@ func TestReadAllRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	walPath := filepath.Join(tmpDir, "test.wal")
 
@@ -95,7 +95,7 @@ func TestReadAllRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	// Write some events
 	for i := 0; i < 5; i++ {
@@ -128,6 +128,7 @@ func TestReadAllRecords(t *testing.T) {
 		if err != nil {
 			t.Errorf("Failed to unmarshal record %d: %v", i, err)
 		}
+		// #nosec G115 - test sequence
 		if record.Sequence != uint64(i+1) {
 			t.Errorf("Record %d has wrong sequence: expected %d, got %d", i, i+1, record.Sequence)
 		}

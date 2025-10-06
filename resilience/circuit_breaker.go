@@ -1,3 +1,4 @@
+// Package resilience provides failure handling and recovery mechanisms.
 package resilience
 
 import (

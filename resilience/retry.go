@@ -99,6 +99,7 @@ func (p *RetryPolicy) calculateDelay(attempt int) time.Duration {
 
 	// Add jitter
 	if p.Jitter > 0 {
+		// #nosec G404 - weak random acceptable for jitter in retry backoff
 		jitter := delay * p.Jitter * (2*rand.Float64() - 1) // Random between -jitter and +jitter
 		delay += jitter
 

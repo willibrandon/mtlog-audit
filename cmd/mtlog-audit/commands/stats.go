@@ -87,7 +87,7 @@ Examples:
   
   # Output statistics as JSON
   mtlog-audit stats --wal /var/audit/app.wal --format json`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			// Gather statistics
 			stats, err := gatherStats(walPath, verbose)
 			if err != nil {
@@ -110,7 +110,7 @@ Examples:
 	cmd.Flags().StringVar(&format, "format", "table", "Output format (table, json)")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "Show detailed statistics")
 
-	cmd.MarkFlagRequired("wal")
+	_ = cmd.MarkFlagRequired("wal")
 
 	return cmd
 }
@@ -126,7 +126,7 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WAL: %w", err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	// Get segments from WAL
 	segments := w.GetSegments()
@@ -147,7 +147,7 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 			// Calculate record count more safely
 			recordCount := 0
 			if seg.EndSeq > seg.StartSeq {
-				recordCount = int(seg.EndSeq - seg.StartSeq + 1)
+				recordCount = int(seg.EndSeq - seg.StartSeq + 1) // #nosec G115 - sequence count
 			} else if seg.StartSeq > 0 && !seg.Sealed {
 				// For active segments, we don't know the end sequence yet
 				recordCount = -1 // Indicate unknown
@@ -207,7 +207,7 @@ func gatherStats(walPath string, includeSegments bool) (*WALStats, error) {
 		}
 
 		segmentEvents, err := segmentReader.ReadAll()
-		segmentReader.Close()
+		_ = segmentReader.Close()
 		if err != nil {
 			logger.Log.Warn("Failed to read all events from segment {path}: {error}", segment.Path, err)
 			continue
@@ -282,62 +282,62 @@ func outputStatsJSON(stats *WALStats) error {
 func outputTable(stats *WALStats, verbose bool) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(w, "WAL STATISTICS")
-	fmt.Fprintln(w, "==============")
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "WAL STATISTICS")
+	_, _ = fmt.Fprintln(w, "==============")
+	_, _ = fmt.Fprintln(w)
 
 	// File information
-	fmt.Fprintf(w, "Path:\t%s\n", stats.Path)
-	fmt.Fprintf(w, "Total Size:\t%s\n", formatBytes(stats.TotalSize))
-	fmt.Fprintf(w, "Segments:\t%d\n", stats.SegmentCount)
-	fmt.Fprintf(w, "Created:\t%s\n", stats.CreatedAt.Format(time.RFC3339))
-	fmt.Fprintf(w, "Modified:\t%s\n", stats.ModifiedAt.Format(time.RFC3339))
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "Path:\t%s\n", stats.Path)
+	_, _ = fmt.Fprintf(w, "Total Size:\t%s\n", formatBytes(stats.TotalSize))
+	_, _ = fmt.Fprintf(w, "Segments:\t%d\n", stats.SegmentCount)
+	_, _ = fmt.Fprintf(w, "Created:\t%s\n", stats.CreatedAt.Format(time.RFC3339))
+	_, _ = fmt.Fprintf(w, "Modified:\t%s\n", stats.ModifiedAt.Format(time.RFC3339))
+	_, _ = fmt.Fprintln(w)
 
 	// Record statistics
-	fmt.Fprintln(w, "RECORDS")
-	fmt.Fprintln(w, "-------")
-	fmt.Fprintf(w, "Total:\t%d\n", stats.TotalRecords)
-	fmt.Fprintf(w, "Sequence Range:\t%d - %d\n", stats.FirstSequence, stats.LastSequence)
-	fmt.Fprintf(w, "Time Range:\t%s - %s\n",
+	_, _ = fmt.Fprintln(w, "RECORDS")
+	_, _ = fmt.Fprintln(w, "-------")
+	_, _ = fmt.Fprintf(w, "Total:\t%d\n", stats.TotalRecords)
+	_, _ = fmt.Fprintf(w, "Sequence Range:\t%d - %d\n", stats.FirstSequence, stats.LastSequence)
+	_, _ = fmt.Fprintf(w, "Time Range:\t%s - %s\n",
 		stats.FirstEventTime.Format(time.RFC3339),
 		stats.LastEventTime.Format(time.RFC3339))
-	fmt.Fprintf(w, "Duration:\t%s\n", stats.Duration)
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "Duration:\t%s\n", stats.Duration)
+	_, _ = fmt.Fprintln(w)
 
 	// Level breakdown
-	fmt.Fprintln(w, "BY LEVEL")
-	fmt.Fprintln(w, "--------")
-	fmt.Fprintf(w, "Errors:\t%d\n", stats.ErrorCount)
-	fmt.Fprintf(w, "Warnings:\t%d\n", stats.WarningCount)
-	fmt.Fprintf(w, "Info:\t%d\n", stats.InfoCount)
-	fmt.Fprintf(w, "Debug:\t%d\n", stats.DebugCount)
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "BY LEVEL")
+	_, _ = fmt.Fprintln(w, "--------")
+	_, _ = fmt.Fprintf(w, "Errors:\t%d\n", stats.ErrorCount)
+	_, _ = fmt.Fprintf(w, "Warnings:\t%d\n", stats.WarningCount)
+	_, _ = fmt.Fprintf(w, "Info:\t%d\n", stats.InfoCount)
+	_, _ = fmt.Fprintf(w, "Debug:\t%d\n", stats.DebugCount)
+	_, _ = fmt.Fprintln(w)
 
 	// Health indicators
-	fmt.Fprintln(w, "HEALTH")
-	fmt.Fprintln(w, "------")
-	fmt.Fprintf(w, "Has Corruption:\t%v\n", stats.HasCorruption)
-	fmt.Fprintf(w, "Is Sealed:\t%v\n", stats.IsSealed)
-	fmt.Fprintf(w, "Compression:\t%s\n", stats.Compression)
-	fmt.Fprintf(w, "Fragmentation:\t%.1f%%\n", stats.FragmentationPct)
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "HEALTH")
+	_, _ = fmt.Fprintln(w, "------")
+	_, _ = fmt.Fprintf(w, "Has Corruption:\t%v\n", stats.HasCorruption)
+	_, _ = fmt.Fprintf(w, "Is Sealed:\t%v\n", stats.IsSealed)
+	_, _ = fmt.Fprintf(w, "Compression:\t%s\n", stats.Compression)
+	_, _ = fmt.Fprintf(w, "Fragmentation:\t%.1f%%\n", stats.FragmentationPct)
+	_, _ = fmt.Fprintln(w)
 
 	// Performance metrics
-	fmt.Fprintln(w, "PERFORMANCE")
-	fmt.Fprintln(w, "-----------")
-	fmt.Fprintf(w, "Avg Record Size:\t%s\n", formatBytes(stats.AvgRecordSize))
-	fmt.Fprintf(w, "Avg Segment Size:\t%s\n", formatBytes(stats.AvgSegmentSize))
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "PERFORMANCE")
+	_, _ = fmt.Fprintln(w, "-----------")
+	_, _ = fmt.Fprintf(w, "Avg Record Size:\t%s\n", formatBytes(stats.AvgRecordSize))
+	_, _ = fmt.Fprintf(w, "Avg Segment Size:\t%s\n", formatBytes(stats.AvgSegmentSize))
+	_, _ = fmt.Fprintln(w)
 
 	// Detailed segment information if verbose
 	if verbose && len(stats.Segments) > 0 {
-		fmt.Fprintln(w, "SEGMENTS")
-		fmt.Fprintln(w, "--------")
-		fmt.Fprintln(w, "Path\tSize\tRecords\tSeq Range\tSealed\tCompaction%")
+		_, _ = fmt.Fprintln(w, "SEGMENTS")
+		_, _ = fmt.Fprintln(w, "--------")
+		_, _ = fmt.Fprintln(w, "Path\tSize\tRecords\tSeq Range\tSealed\tCompaction%")
 
 		for _, seg := range stats.Segments {
-			fmt.Fprintf(w, "%s\t%s\t%d\t%d-%d\t%v\t%.1f%%\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%d-%d\t%v\t%.1f%%\n",
 				seg.Path,
 				formatBytes(seg.Size),
 				seg.RecordCount,

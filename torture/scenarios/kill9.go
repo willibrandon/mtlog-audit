@@ -32,13 +32,14 @@ func (k *Kill9DuringWrite) Name() string {
 }
 
 // Execute runs the scenario.
-func (k *Kill9DuringWrite) Execute(sink *audit.Sink, dir string) error {
+func (k *Kill9DuringWrite) Execute(sink *audit.Sink, _ string) error {
 	killAfter := k.KillAfter
 	if killAfter == 0 {
 		// Random kill point between 10% and 90% of events
-		min := k.EventCount / 10
-		max := k.EventCount * 9 / 10
-		killAfter = min + rand.Intn(max-min)
+		minSeq := k.EventCount / 10
+		maxSeq := k.EventCount * 9 / 10
+		// #nosec G404 - weak random acceptable for test scenario randomization
+		killAfter = minSeq + rand.Intn(maxSeq-minSeq)
 	}
 
 	// Write events in background
@@ -65,7 +66,8 @@ func (k *Kill9DuringWrite) Execute(sink *audit.Sink, dir string) error {
 				Properties: map[string]interface{}{
 					"Index":     i,
 					"Timestamp": time.Now().UnixNano(),
-					"Random":    rand.Int63(),
+					// #nosec G404 - weak random acceptable for test data generation
+					"Random": rand.Int63(),
 				},
 			}
 
@@ -107,7 +109,7 @@ func (k *Kill9DuringWrite) Verify(dir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to reopen WAL: %w", err)
 	}
-	defer sink.Close()
+	defer func() { _ = sink.Close() }()
 
 	// Verify integrity
 	report, err := sink.VerifyIntegrity()
@@ -135,8 +137,8 @@ func (k *Kill9DuringWrite) Verify(dir string) error {
 	killAfter := k.KillAfter
 	if killAfter == 0 {
 		// Random kill point between 10% and 90% of events
-		min := k.EventCount / 10
-		killAfter = min // Use minimum as conservative estimate
+		minSeq := k.EventCount / 10
+		killAfter = minSeq // Use minimum as conservative estimate
 	}
 
 	// Allow some margin for async writes

@@ -24,9 +24,13 @@ type Checksum interface {
 type ChecksumType int
 
 const (
+	// ChecksumCRC32 is the CRC32 (IEEE) checksum algorithm
 	ChecksumCRC32 ChecksumType = iota
+	// ChecksumCRC32C is the CRC32C (Castagnoli) checksum algorithm - hardware accelerated
 	ChecksumCRC32C
+	// ChecksumCRC64 is the CRC64 (ISO) checksum algorithm
 	ChecksumCRC64
+	// ChecksumXXHash3 is the XXHash64 non-cryptographic hash algorithm
 	ChecksumXXHash3
 )
 
@@ -51,19 +55,23 @@ type checksumState struct {
 // CRC32Checksum implements CRC32 (IEEE) checksum
 type CRC32Checksum struct{}
 
+// Calculate computes the CRC32 checksum of the given data.
 func (c *CRC32Checksum) Calculate(data []byte) uint64 {
 	state := checksumPool.Get().(*checksumState)
 	defer checksumPool.Put(state)
 
 	state.crc32.Reset()
+	// #nosec G104 - hash.Hash.Write never returns an error
 	state.crc32.Write(data)
 	return uint64(state.crc32.Sum32())
 }
 
+// Verify checks if the data matches the expected CRC32 checksum.
 func (c *CRC32Checksum) Verify(data []byte, expected uint64) bool {
 	return c.Calculate(data) == expected
 }
 
+// Name returns the checksum algorithm name.
 func (c *CRC32Checksum) Name() string {
 	return "CRC32-IEEE"
 }
@@ -72,19 +80,23 @@ func (c *CRC32Checksum) Name() string {
 // This is hardware-accelerated on modern CPUs
 type CRC32CChecksum struct{}
 
+// Calculate computes the CRC32C checksum of the given data.
 func (c *CRC32CChecksum) Calculate(data []byte) uint64 {
 	state := checksumPool.Get().(*checksumState)
 	defer checksumPool.Put(state)
 
 	state.crc32c.Reset()
+	// #nosec G104 - hash.Hash.Write never returns an error
 	state.crc32c.Write(data)
 	return uint64(state.crc32c.Sum32())
 }
 
+// Verify checks if the data matches the expected CRC32C checksum.
 func (c *CRC32CChecksum) Verify(data []byte, expected uint64) bool {
 	return c.Calculate(data) == expected
 }
 
+// Name returns the checksum algorithm name.
 func (c *CRC32CChecksum) Name() string {
 	return "CRC32C"
 }
@@ -92,19 +104,23 @@ func (c *CRC32CChecksum) Name() string {
 // CRC64Checksum implements CRC64 (ISO) checksum
 type CRC64Checksum struct{}
 
+// Calculate computes the CRC64 checksum of the given data.
 func (c *CRC64Checksum) Calculate(data []byte) uint64 {
 	state := checksumPool.Get().(*checksumState)
 	defer checksumPool.Put(state)
 
 	state.crc64.Reset()
+	// #nosec G104 - hash.Hash.Write never returns an error
 	state.crc64.Write(data)
 	return state.crc64.Sum64()
 }
 
+// Verify checks if the data matches the expected CRC64 checksum.
 func (c *CRC64Checksum) Verify(data []byte, expected uint64) bool {
 	return c.Calculate(data) == expected
 }
 
+// Name returns the checksum algorithm name.
 func (c *CRC64Checksum) Name() string {
 	return "CRC64-ISO"
 }
@@ -113,14 +129,17 @@ func (c *CRC64Checksum) Name() string {
 // Note: This uses xxHash (v2) which is production-ready and widely used
 type XXHash3Checksum struct{}
 
+// Calculate computes the xxHash checksum of the given data.
 func (c *XXHash3Checksum) Calculate(data []byte) uint64 {
 	return xxhash.Sum64(data)
 }
 
+// Verify checks if the data matches the expected xxHash checksum.
 func (c *XXHash3Checksum) Verify(data []byte, expected uint64) bool {
 	return c.Calculate(data) == expected
 }
 
+// Name returns the checksum algorithm name.
 func (c *XXHash3Checksum) Name() string {
 	return "XXHash64"
 }
@@ -155,6 +174,7 @@ func NewCompositeChecksum(primary, secondary ChecksumType) *CompositeChecksum {
 	}
 }
 
+// Calculate computes the composite checksum using both algorithms.
 func (c *CompositeChecksum) Calculate(data []byte) uint64 {
 	p := c.primary.Calculate(data)
 	s := c.secondary.Calculate(data)
@@ -162,10 +182,12 @@ func (c *CompositeChecksum) Calculate(data []byte) uint64 {
 	return (p << 32) | (s & 0xFFFFFFFF)
 }
 
+// Verify checks if the data matches the expected composite checksum.
 func (c *CompositeChecksum) Verify(data []byte, expected uint64) bool {
 	return c.Calculate(data) == expected
 }
 
+// Name returns the composite checksum algorithm name.
 func (c *CompositeChecksum) Name() string {
 	return c.primary.Name() + "+" + c.secondary.Name()
 }
@@ -304,6 +326,7 @@ func (rc *RollingChecksum) Update(b byte) uint64 {
 		// XXHash doesn't support incremental rolling, use Adler32-style rolling hash
 		// Remove old byte contribution
 		rc.a = (rc.a - uint32(oldByte) + uint32(b)) % 65521
+		// #nosec G115 - rc.size is window size, bounded and controlled
 		rc.b = (rc.b - uint32(rc.size)*uint32(oldByte) + rc.a - 1) % 65521
 		rc.sum = (uint64(rc.b) << 32) | uint64(rc.a)
 
@@ -313,8 +336,10 @@ func (rc *RollingChecksum) Update(b byte) uint64 {
 		rc.crc32Hash.Reset()
 		// Write from current position to end, then from start to current position
 		if rc.pos < rc.size {
+			// #nosec G104 - hash.Hash.Write never returns an error
 			rc.crc32Hash.Write(rc.window[rc.pos:])
 		}
+		// #nosec G104 - hash.Hash.Write never returns an error
 		rc.crc32Hash.Write(rc.window[:rc.pos])
 		rc.sum = uint64(rc.crc32Hash.Sum32())
 
@@ -322,8 +347,10 @@ func (rc *RollingChecksum) Update(b byte) uint64 {
 		// Similar to CRC32, maintain hasher state
 		rc.hasher.Reset()
 		if rc.pos < rc.size {
+			// #nosec G104 - hash.Hash.Write never returns an error
 			rc.hasher.Write(rc.window[rc.pos:])
 		}
+		// #nosec G104 - hash.Hash.Write never returns an error
 		rc.hasher.Write(rc.window[:rc.pos])
 		rc.sum = rc.hasher.Sum64()
 

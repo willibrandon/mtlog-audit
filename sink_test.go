@@ -14,7 +14,7 @@ func TestSinkBasic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	walPath := tmpDir + "/test.wal"
 
@@ -26,7 +26,7 @@ func TestSinkBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sink: %v", err)
 	}
-	defer sink.Close()
+	defer func() { _ = sink.Close() }()
 
 	// Create a test event
 	event := &core.LogEvent{
@@ -55,7 +55,7 @@ func TestSinkMultipleEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	walPath := tmpDir + "/test.wal"
 
@@ -87,7 +87,7 @@ func TestSinkMultipleEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to reopen sink: %v", err)
 	}
-	defer sink2.Close()
+	defer func() { _ = sink2.Close() }()
 
 	// Verify integrity
 	report, err := sink2.VerifyIntegrity()

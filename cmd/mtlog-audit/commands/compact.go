@@ -42,13 +42,17 @@ Examples:
   
   # Set custom compaction threshold (0.0-1.0)
   mtlog-audit compact --wal /var/audit/app.wal --threshold 0.3`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Open WAL
 			w, err := wal.New(walPath)
 			if err != nil {
 				return fmt.Errorf("failed to open WAL: %w", err)
 			}
-			defer w.Close()
+			defer func() {
+				if err := w.Close(); err != nil {
+					_, _ = fmt.Fprintf(cmd.OutOrStderr(), "Warning: failed to close WAL: %v\n", err)
+				}
+			}()
 
 			// Create compactor with custom policy if threshold is set
 			var policy *wal.CompactionPolicy
@@ -80,18 +84,19 @@ Examples:
 
 			// Perform compaction
 			var compactErr error
-			if startSeq > 0 || endSeq > 0 {
+			switch {
+			case startSeq > 0 || endSeq > 0:
 				// Compact specific range
 				if endSeq == 0 {
 					endSeq = ^uint64(0) // Max uint64
 				}
 				logger.Log.Info("Compacting sequence range {start} to {end}", startSeq, endSeq)
 				compactErr = compactor.CompactRange(startSeq, endSeq)
-			} else if force {
+			case force:
 				// Force compact all segments
 				logger.Log.Info("Force compacting all eligible segments...")
 				compactErr = compactor.ForceCompact()
-			} else {
+			default:
 				// Normal compaction based on policy
 				logger.Log.Info("Compacting based on policy...")
 				compactErr = compactor.Compact()
@@ -125,13 +130,13 @@ Examples:
 	cmd.Flags().Uint64Var(&endSeq, "end", 0, "End sequence number for range compaction")
 	cmd.Flags().Float64Var(&threshold, "threshold", 0.5, "Compaction ratio threshold (0.0-1.0)")
 
-	cmd.MarkFlagRequired("wal")
+	_ = cmd.MarkFlagRequired("wal")
 
 	return cmd
 }
 
 // performDryRun analyzes what would be compacted without actually doing it.
-func performDryRun(compactor *wal.Compactor, w *wal.WAL) error {
+func performDryRun(_ *wal.Compactor, _ *wal.WAL) error {
 	// Get segments - for now we'll use a placeholder
 	segments := make([]*wal.Segment, 0)
 

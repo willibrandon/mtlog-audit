@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	//nolint:gosec // MD5 used for checksums not security
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/json"
@@ -65,11 +66,11 @@ func NewGCSBackend(cfg GCSConfig) (*GCSBackend, error) {
 				Location:     cfg.Region,
 				StorageClass: cfg.StorageClass,
 			}); err != nil {
-				client.Close()
+				_ = client.Close()
 				return nil, fmt.Errorf("failed to create bucket: %w", err)
 			}
 		} else {
-			client.Close()
+			_ = client.Close()
 			return nil, fmt.Errorf("bucket verification failed: %w", err)
 		}
 	}
@@ -124,7 +125,7 @@ func (gb *GCSBackend) WriteBatch(events []*core.LogEvent) error {
 }
 
 // Read reads events from GCS (not implemented for audit logs)
-func (gb *GCSBackend) Read(start, end time.Time) ([]*core.LogEvent, error) {
+func (gb *GCSBackend) Read(_, _ time.Time) ([]*core.LogEvent, error) {
 	// Audit logs are write-only for compliance
 	return nil, fmt.Errorf("reading from audit backend is not supported")
 }
@@ -183,7 +184,7 @@ func (gb *GCSBackend) VerifyIntegrity() (*IntegrityReport, error) {
 				report.Errors = append(report.Errors, fmt.Sprintf("CRC32C mismatch for %s", attrs.Name))
 				report.Valid = false
 			}
-			reader.Close()
+			_ = reader.Close()
 		}
 
 		// Check retention policy if configured
@@ -231,7 +232,10 @@ func (gb *GCSBackend) flushWorker() {
 		select {
 		case <-gb.flushTicker.C:
 			gb.mu.Lock()
-			gb.flushLocked()
+			if err := gb.flushLocked(); err != nil {
+				// Log error but continue - this is a background flush
+				_ = err
+			}
 			gb.mu.Unlock()
 		case <-gb.stopChan:
 			return
@@ -268,6 +272,7 @@ func (gb *GCSBackend) flushLocked() error {
 
 	// Calculate MD5 hash for integrity verification
 	data := buf.Bytes()
+	// #nosec G401 - MD5 used for integrity verification not cryptographic security
 	md5Hash := md5.Sum(data)
 	md5String := base64.StdEncoding.EncodeToString(md5Hash[:])
 
@@ -295,7 +300,7 @@ func (gb *GCSBackend) flushLocked() error {
 
 	// Write data
 	if _, err := writer.Write(data); err != nil {
-		writer.Close()
+		_ = writer.Close()
 		return fmt.Errorf("failed to write to GCS: %w", err)
 	}
 

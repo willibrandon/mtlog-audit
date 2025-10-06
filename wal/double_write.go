@@ -29,10 +29,14 @@ type JournalEntry struct {
 }
 
 const (
-	JournalMagic     = 0x4A524E4C // "JRNL"
+	// JournalMagic is the magic bytes for journal files.
+	JournalMagic = 0x4A524E4C // "JRNL"
+	// StatusIncomplete indicates a journal entry that has not completed writing
 	StatusIncomplete = 0
-	StatusComplete   = 1
-	StatusApplied    = 2
+	// StatusComplete indicates a journal entry that has been fully written
+	StatusComplete = 1
+	// StatusApplied indicates a journal entry that has been applied to the main file
+	StatusApplied = 2
 )
 
 // NewDoubleWriteBuffer creates a new double-write buffer
@@ -55,8 +59,9 @@ func (d *DoubleWriteBuffer) WriteToJournal(data []byte, position int64, needsSyn
 		Magic:    JournalMagic,
 		Status:   StatusIncomplete,
 		Position: position,
-		Length:   uint32(len(data)),
-		CRC32:    crc32.Checksum(data, d.crcTable),
+		// #nosec G115 - data length validated against max record size before this point
+		Length: uint32(len(data)),
+		CRC32:  crc32.Checksum(data, d.crcTable),
 	}
 
 	// Write entry header
@@ -231,8 +236,8 @@ func (d *DoubleWriteBuffer) getLastEntrySize() int64 {
 	currentPos, _ := d.journal.Seek(0, 1)
 
 	// Seek to beginning to scan
-	d.journal.Seek(0, 0)
-	defer d.journal.Seek(currentPos, 0)
+	_, _ = d.journal.Seek(0, 0)
+	defer func() { _, _ = d.journal.Seek(currentPos, 0) }()
 
 	var lastEntrySize int64
 	for {
@@ -245,10 +250,10 @@ func (d *DoubleWriteBuffer) getLastEntrySize() int64 {
 		}
 
 		// Skip status
-		d.journal.Seek(1, 1)
+		_, _ = d.journal.Seek(1, 1)
 
 		// Skip position
-		d.journal.Seek(8, 1)
+		_, _ = d.journal.Seek(8, 1)
 
 		// Read length
 		var length uint32
@@ -257,10 +262,10 @@ func (d *DoubleWriteBuffer) getLastEntrySize() int64 {
 		}
 
 		// Skip CRC32
-		d.journal.Seek(4, 1)
+		_, _ = d.journal.Seek(4, 1)
 
 		// Skip data
-		d.journal.Seek(int64(length), 1)
+		_, _ = d.journal.Seek(int64(length), 1)
 
 		// Calculate entry size: magic(4) + status(1) + position(8) + length(4) + crc32(4) + data(length)
 		lastEntrySize = 4 + 1 + 8 + 4 + 4 + int64(length)

@@ -11,11 +11,12 @@ func TestDoubleWriteBuffer_WriteAndRecover(t *testing.T) {
 	journalPath := filepath.Join(dir, "test.journal")
 
 	// Create journal file
+	// #nosec G304 - test file path from TempDir
 	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
-	defer journal.Close()
+	defer func() { _ = journal.Close() }()
 
 	// Create double-write buffer
 	dwb, err := NewDoubleWriteBuffer(journal, 4096)
@@ -55,6 +56,7 @@ func TestDoubleWriteBuffer_RecoverIncomplete(t *testing.T) {
 	journalPath := filepath.Join(dir, "test.journal")
 
 	// Create and write without marking complete
+	// #nosec G304 - test file path from TempDir
 	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
@@ -83,14 +85,15 @@ func TestDoubleWriteBuffer_RecoverIncomplete(t *testing.T) {
 	}
 
 	// Don't mark complete to simulate crash
-	journal.Close()
+	_ = journal.Close()
 
 	// Reopen and recover
+	// #nosec G304 - test file path from TempDir
 	journal2, err := os.OpenFile(journalPath, os.O_RDWR|os.O_SYNC, 0600)
 	if err != nil {
 		t.Fatalf("Failed to reopen journal: %v", err)
 	}
-	defer journal2.Close()
+	defer func() { _ = journal2.Close() }()
 
 	dwb2, err := NewDoubleWriteBuffer(journal2, 4096)
 	if err != nil {
@@ -125,11 +128,12 @@ func TestDoubleWriteBuffer_Clear(t *testing.T) {
 	dir := t.TempDir()
 	journalPath := filepath.Join(dir, "test.journal")
 
+	// #nosec G304 - test file path from TempDir
 	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
-	defer journal.Close()
+	defer func() { _ = journal.Close() }()
 
 	dwb, err := NewDoubleWriteBuffer(journal, 4096)
 	if err != nil {
@@ -163,11 +167,12 @@ func TestDoubleWriteBuffer_Compact(t *testing.T) {
 	dir := t.TempDir()
 	journalPath := filepath.Join(dir, "test.journal")
 
+	// #nosec G304 - test file path from TempDir
 	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
-	defer journal.Close()
+	defer func() { _ = journal.Close() }()
 
 	dwb, err := NewDoubleWriteBuffer(journal, 4096)
 	if err != nil {
@@ -212,6 +217,7 @@ func TestDoubleWriteBuffer_CRCValidation(t *testing.T) {
 	journalPath := filepath.Join(dir, "test.journal")
 
 	// Create journal and write data
+	// #nosec G304 - test file path from TempDir
 	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
@@ -227,9 +233,10 @@ func TestDoubleWriteBuffer_CRCValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to write: %v", err)
 	}
-	journal.Close()
+	_ = journal.Close()
 
 	// Corrupt the journal file
+	// #nosec G304 - test file path from TempDir
 	journalData, err := os.ReadFile(journalPath)
 	if err != nil {
 		t.Fatalf("Failed to read journal: %v", err)
@@ -246,11 +253,12 @@ func TestDoubleWriteBuffer_CRCValidation(t *testing.T) {
 	}
 
 	// Try to recover
+	// #nosec G304 - test file path from TempDir
 	journal2, err := os.OpenFile(journalPath, os.O_RDWR|os.O_SYNC, 0600)
 	if err != nil {
 		t.Fatalf("Failed to reopen journal: %v", err)
 	}
-	defer journal2.Close()
+	defer func() { _ = journal2.Close() }()
 
 	dwb2, err := NewDoubleWriteBuffer(journal2, 4096)
 	if err != nil {
@@ -268,11 +276,12 @@ func TestDoubleWriteBuffer_LargeData(t *testing.T) {
 	dir := t.TempDir()
 	journalPath := filepath.Join(dir, "test.journal")
 
+	// #nosec G304 - test file path from TempDir
 	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
 	if err != nil {
 		t.Fatalf("Failed to create journal: %v", err)
 	}
-	defer journal.Close()
+	defer func() { _ = journal.Close() }()
 
 	// Use larger buffer size
 	dwb, err := NewDoubleWriteBuffer(journal, 1024*1024) // 1MB
@@ -319,11 +328,12 @@ func BenchmarkDoubleWriteBuffer_Write(b *testing.B) {
 	dir := b.TempDir()
 	journalPath := filepath.Join(dir, "bench.journal")
 
+	// #nosec G304 - test file path from TempDir
 	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR|os.O_SYNC, 0600)
 	if err != nil {
 		b.Fatalf("Failed to create journal: %v", err)
 	}
-	defer journal.Close()
+	defer func() { _ = journal.Close() }()
 
 	dwb, err := NewDoubleWriteBuffer(journal, 64*1024)
 	if err != nil {
@@ -341,7 +351,7 @@ func BenchmarkDoubleWriteBuffer_Write(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Write failed: %v", err)
 		}
-		dwb.MarkComplete(true)
+		_ = dwb.MarkComplete(true)
 	}
 	b.SetBytes(int64(len(testData)))
 }

@@ -42,7 +42,7 @@ This command continuously monitors WAL files for:
 
   # Output monitoring data to file
   mtlog-audit monitor --wal /var/audit/mtlog.wal --output monitor.log`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			return runMonitor(walPath, checkInterval, alertThreshold, output)
 		},
 	}
@@ -52,7 +52,7 @@ This command continuously monitors WAL files for:
 	cmd.Flags().IntVar(&alertThreshold, "threshold", 5, "Alert threshold for error rate (errors per interval)")
 	cmd.Flags().StringVar(&output, "output", "", "Output monitoring data to file (default: stdout)")
 
-	cmd.MarkFlagRequired("wal")
+	_ = cmd.MarkFlagRequired("wal")
 
 	return cmd
 }
@@ -132,7 +132,7 @@ func performCheck(walPath string, lastSize, lastSequence *uint64, errorCount *in
 		logger.Log.Error("❌ Failed to open WAL: {error}", err)
 		return err
 	}
-	defer sink.Close()
+	defer func() { _ = sink.Close() }()
 
 	// Check WAL file stats
 	info, err := os.Stat(walPath)
@@ -141,8 +141,8 @@ func performCheck(walPath string, lastSize, lastSequence *uint64, errorCount *in
 		return err
 	}
 
-	currentSize := uint64(info.Size())
-	sizeGrowth := int64(currentSize - *lastSize)
+	currentSize := uint64(info.Size())           // #nosec G115 - file size conversion
+	sizeGrowth := int64(currentSize - *lastSize) // #nosec G115 - size delta calculation
 
 	// Verify integrity
 	report, err := sink.VerifyIntegrity()

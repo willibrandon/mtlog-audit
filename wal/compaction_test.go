@@ -42,7 +42,7 @@ func TestCompactor_FindCompactableSegments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	// Create mock segments
 	now := time.Now()
@@ -147,7 +147,7 @@ func TestCompactor_Stats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	compactor := NewCompactor(wal, nil)
 
@@ -181,6 +181,7 @@ func TestCompactor_CalculateCompactionRatio(t *testing.T) {
 	segmentPath := filepath.Join(dir, "test.wal")
 
 	// Create a segment with mixed records: normal, deleted, and superseded
+	// #nosec G304 - test file path from TempDir
 	file, err := os.Create(segmentPath)
 	if err != nil {
 		t.Fatalf("Failed to create segment file: %v", err)
@@ -229,7 +230,7 @@ func TestCompactor_CalculateCompactionRatio(t *testing.T) {
 		prevHash = record.ComputeHash()
 	}
 
-	file.Close()
+	_ = file.Close()
 
 	// Create segment and WAL for compactor
 	segment := &Segment{
@@ -245,7 +246,7 @@ func TestCompactor_CalculateCompactionRatio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	compactor := NewCompactor(wal, nil)
 
@@ -277,6 +278,7 @@ func TestCompactor_CalculateCompactionRatio(t *testing.T) {
 
 	// Test with a segment that has no deleted/superseded records
 	cleanSegmentPath := filepath.Join(dir, "clean.wal")
+	// #nosec G304 - test file path from TempDir
 	cleanFile, err := os.Create(cleanSegmentPath)
 	if err != nil {
 		t.Fatalf("Failed to create clean segment: %v", err)
@@ -316,7 +318,7 @@ func TestCompactor_CalculateCompactionRatio(t *testing.T) {
 		prevHash = record.ComputeHash()
 	}
 
-	cleanFile.Close()
+	_ = cleanFile.Close()
 
 	cleanSegment := &Segment{
 		Path:     cleanSegmentPath,
@@ -349,7 +351,7 @@ func TestCompactor_StartStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	compactor := NewCompactor(wal, nil)
 
@@ -396,7 +398,7 @@ func TestCompactor_ForceCompact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	compactor := NewCompactor(wal, nil)
 
@@ -415,7 +417,7 @@ func TestCompactor_CompactRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	// Add test segments
 	segments := []*Segment{
@@ -442,7 +444,7 @@ func TestCompactor_CompactRange(t *testing.T) {
 	for _, seg := range segments {
 		// Create empty files
 		f, _ := os.Create(seg.Path)
-		f.Close()
+		_ = f.Close()
 		wal.segments.segments = append(wal.segments.segments, seg)
 	}
 
@@ -465,7 +467,7 @@ func TestCompactor_MarkDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	compactor := NewCompactor(wal, nil)
 
@@ -481,27 +483,30 @@ func TestCompactor_MarkDeleted(t *testing.T) {
 func TestCompactor_CleanupOldSegments(t *testing.T) {
 	dir := t.TempDir()
 	archiveDir := filepath.Join(dir, "archive")
-	os.MkdirAll(archiveDir, 0755)
+	// #nosec G301 - test directory permissions appropriate for tests
+	_ = os.MkdirAll(archiveDir, 0755)
 
 	// Create old archive files
 	oldTime := time.Now().Add(-30 * 24 * time.Hour) // 30 days old
 	oldFile := filepath.Join(archiveDir, "old.wal")
+	// #nosec G304 - test file path from TempDir
 	f, err := os.Create(oldFile)
 	if err != nil {
 		t.Fatalf("Failed to create old file: %v", err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	// Set old modification time
-	os.Chtimes(oldFile, oldTime, oldTime)
+	_ = os.Chtimes(oldFile, oldTime, oldTime)
 
 	// Create recent file
 	recentFile := filepath.Join(archiveDir, "recent.wal")
+	// #nosec G304 - test file path from TempDir
 	f, err = os.Create(recentFile)
 	if err != nil {
 		t.Fatalf("Failed to create recent file: %v", err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	// Create WAL and compactor
 	walPath := filepath.Join(dir, "test.wal")
@@ -509,7 +514,7 @@ func TestCompactor_CleanupOldSegments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	policy := &CompactionPolicy{
 		RetentionPeriod: 7 * 24 * time.Hour, // 7 days
@@ -541,7 +546,7 @@ func TestCompactor_VacuumDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	// Create a segment with deleted records
 	segment := &Segment{
@@ -551,7 +556,7 @@ func TestCompactor_VacuumDeleted(t *testing.T) {
 
 	// Create empty file for segment
 	f, _ := os.Create(segment.Path)
-	f.Close()
+	_ = f.Close()
 
 	wal.segments.segments = append(wal.segments.segments, segment)
 

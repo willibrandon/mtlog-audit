@@ -160,7 +160,7 @@ func (e *ChaCha20Poly1305Encryptor) Algorithm() string {
 	return "ChaCha20-Poly1305"
 }
 
-// KeyDerivation derives an encryption key from a password
+// DeriveKey derives an encryption key from a password using PBKDF2.
 func DeriveKey(password []byte, salt []byte, keyLen int) ([]byte, error) {
 	if len(salt) < 16 {
 		return nil, fmt.Errorf("salt must be at least 16 bytes")

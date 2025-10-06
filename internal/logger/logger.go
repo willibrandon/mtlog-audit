@@ -1,3 +1,4 @@
+// Package logger provides internal logging utilities for mtlog-audit CLI.
 package logger
 
 import (

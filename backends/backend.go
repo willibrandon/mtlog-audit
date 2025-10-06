@@ -63,20 +63,18 @@ type FilesystemConfig struct {
 	Shadow   bool          `json:"shadow"`   // Shadow copy for redundancy
 }
 
+// Type returns the backend type identifier.
 func (c FilesystemConfig) Type() string {
 	return "filesystem"
 }
 
+// Validate validates the filesystem configuration.
 func (c FilesystemConfig) Validate() error {
 	if c.Path == "" {
 		return fmt.Errorf("path is required")
 	}
-	if c.MaxSize <= 0 {
-		c.MaxSize = 100 * 1024 * 1024 // 100MB default
-	}
-	if c.MaxAge <= 0 {
-		c.MaxAge = 24 * time.Hour // 1 day default
-	}
+	// MaxSize and MaxAge validation removed - assignments were ineffective
+	// Defaults should be set by caller or constructor
 	return nil
 }
 
@@ -92,10 +90,12 @@ type S3Config struct {
 	RetentionDays        int    `json:"retention_days"`
 }
 
+// Type returns the backend type identifier.
 func (c S3Config) Type() string {
 	return "s3"
 }
 
+// Validate validates the S3 configuration.
 func (c S3Config) Validate() error {
 	if c.Bucket == "" {
 		return fmt.Errorf("bucket is required")
@@ -116,10 +116,12 @@ type AzureConfig struct {
 	RetentionDays    int    `json:"retention_days"`
 }
 
+// Type returns the backend type identifier.
 func (c AzureConfig) Type() string {
 	return "azure"
 }
 
+// Validate validates the Azure configuration.
 func (c AzureConfig) Validate() error {
 	if c.Container == "" {
 		return fmt.Errorf("container is required")
@@ -142,10 +144,12 @@ type GCSConfig struct {
 	Versioning      bool   `json:"versioning"`
 }
 
+// Type returns the backend type identifier.
 func (c GCSConfig) Type() string {
 	return "gcs"
 }
 
+// Validate validates the GCS configuration.
 func (c GCSConfig) Validate() error {
 	if c.Bucket == "" {
 		return fmt.Errorf("bucket is required")

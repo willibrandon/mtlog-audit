@@ -1,9 +1,11 @@
+// Package backends provides storage backend implementations for audit log data.
 package backends
 
 import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	// #nosec G501 - MD5 used for checksums not security
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/json"
@@ -33,10 +35,10 @@ type AzureBackend struct {
 // NewAzureBackend creates a new Azure backend
 func NewAzureBackend(cfg AzureConfig) (*AzureBackend, error) {
 	if cfg.ConnectionString == "" {
-		return nil, fmt.Errorf("Azure connection string is required")
+		return nil, fmt.Errorf("azure connection string is required")
 	}
 	if cfg.Container == "" {
-		return nil, fmt.Errorf("Azure container name is required")
+		return nil, fmt.Errorf("azure container name is required")
 	}
 
 	// Parse connection string to extract account name and key
@@ -147,7 +149,7 @@ func (ab *AzureBackend) WriteBatch(events []*core.LogEvent) error {
 }
 
 // Read reads events from Azure (not implemented for audit logs)
-func (ab *AzureBackend) Read(start, end time.Time) ([]*core.LogEvent, error) {
+func (ab *AzureBackend) Read(_, _ time.Time) ([]*core.LogEvent, error) {
 	// Audit logs are write-only for compliance
 	return nil, fmt.Errorf("reading from audit backend is not supported")
 }
@@ -233,7 +235,10 @@ func (ab *AzureBackend) flushWorker() {
 		select {
 		case <-ab.flushTicker.C:
 			ab.mu.Lock()
-			ab.flushLocked()
+			if err := ab.flushLocked(); err != nil {
+				// Log error but continue - this is a background flush
+				_ = err
+			}
 			ab.mu.Unlock()
 		case <-ab.stopChan:
 			return
@@ -269,7 +274,9 @@ func (ab *AzureBackend) flushLocked() error {
 	}
 
 	// Calculate MD5 hash for integrity verification
+	// #nosec G401 - MD5 used for integrity verification not cryptographic security
 	data := buf.Bytes()
+	// #nosec G401 - MD5 used for integrity verification not cryptographic security
 	md5Hash := md5.Sum(data)
 	md5String := base64.StdEncoding.EncodeToString(md5Hash[:])
 

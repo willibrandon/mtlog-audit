@@ -34,7 +34,8 @@ func TestChecksumAlgorithms(t *testing.T) {
 			}
 
 			// Verify different data produces different checksum
-			differentData := append(testData, byte('!'))
+			differentData := append([]byte(nil), testData...)
+			differentData = append(differentData, byte('!'))
 			if checksum.Verify(differentData, sum) {
 				t.Error("Different data passed verification")
 			}
@@ -68,7 +69,7 @@ func TestCompositeChecksum(t *testing.T) {
 func TestBlockChecksum(t *testing.T) {
 	// Create test data
 	data := make([]byte, 10240) // 10KB
-	rand.Read(data)
+	_, _ = rand.Read(data)
 
 	bc := &BlockChecksum{
 		BlockSize: 1024, // 1KB blocks
@@ -162,16 +163,14 @@ func TestVerifyIntegrity(t *testing.T) {
 	checksumErr, ok := err.(*ChecksumError)
 	if !ok {
 		t.Error("Expected ChecksumError type")
-	} else {
-		if checksumErr.Type != ChecksumCRC32 {
-			t.Errorf("Expected CRC32 type in error, got %v", checksumErr.Type)
-		}
+	} else if checksumErr.Type != ChecksumCRC32 {
+		t.Errorf("Expected CRC32 type in error, got %v", checksumErr.Type)
 	}
 }
 
 func BenchmarkChecksum_CRC32C(b *testing.B) {
 	data := make([]byte, 4096) // 4KB
-	rand.Read(data)
+	_, _ = rand.Read(data)
 
 	checksum := NewChecksum(ChecksumCRC32C)
 
@@ -184,7 +183,7 @@ func BenchmarkChecksum_CRC32C(b *testing.B) {
 
 func BenchmarkChecksum_XXHash3(b *testing.B) {
 	data := make([]byte, 4096) // 4KB
-	rand.Read(data)
+	_, _ = rand.Read(data)
 
 	checksum := NewChecksum(ChecksumXXHash3)
 
@@ -197,7 +196,7 @@ func BenchmarkChecksum_XXHash3(b *testing.B) {
 
 func BenchmarkCompositeChecksum(b *testing.B) {
 	data := make([]byte, 4096) // 4KB
-	rand.Read(data)
+	_, _ = rand.Read(data)
 
 	composite := NewCompositeChecksum(ChecksumCRC32C, ChecksumXXHash3)
 
@@ -292,7 +291,7 @@ func TestEmptyDataChecksum(t *testing.T) {
 func TestLargeDataChecksum(t *testing.T) {
 	// Test with large data (1MB)
 	largeData := make([]byte, 1024*1024)
-	rand.Read(largeData)
+	_, _ = rand.Read(largeData)
 
 	checksum := NewChecksum(ChecksumCRC32C) // Use hardware-accelerated version
 
@@ -311,7 +310,7 @@ func TestLargeDataChecksum(t *testing.T) {
 func TestBlockChecksumPartialBlock(t *testing.T) {
 	// Test with data that doesn't align to block size
 	data := make([]byte, 2500) // 2.5KB
-	rand.Read(data)
+	_, _ = rand.Read(data)
 
 	bc := &BlockChecksum{
 		BlockSize: 1024, // 1KB blocks

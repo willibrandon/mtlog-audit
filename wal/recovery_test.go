@@ -34,7 +34,7 @@ func TestRecoveryEngine_RecoverValidWAL(t *testing.T) {
 			t.Fatalf("Failed to write event: %v", err)
 		}
 	}
-	wal.Close()
+	_ = wal.Close()
 
 	// Now recover
 	engine := NewRecoveryEngine(walPath)
@@ -62,6 +62,7 @@ func TestRecoveryEngine_RecoverCorruptedWAL(t *testing.T) {
 	dir := t.TempDir()
 	walPath := filepath.Join(dir, "corrupted.wal")
 
+	// #nosec G304 - test file path from TempDir
 	file, err := os.Create(walPath)
 	if err != nil {
 		t.Fatalf("Failed to create file: %v", err)
@@ -91,8 +92,8 @@ func TestRecoveryEngine_RecoverCorruptedWAL(t *testing.T) {
 	}
 
 	// Sync and close
-	file.Sync()
-	file.Close()
+	_ = file.Sync()
+	_ = file.Close()
 
 	// Verify file was written
 	stat, err := os.Stat(walPath)
@@ -142,6 +143,7 @@ func TestRecoveryEngine_RepairWAL(t *testing.T) {
 	corruptedPath := filepath.Join(dir, "corrupted.wal")
 	repairedPath := filepath.Join(dir, "repaired.wal")
 
+	// #nosec G304 - test file path from TempDir
 	file, err := os.Create(corruptedPath)
 	if err != nil {
 		t.Fatalf("Failed to create file: %v", err)
@@ -168,8 +170,8 @@ func TestRecoveryEngine_RepairWAL(t *testing.T) {
 	}
 
 	// Sync and close
-	file.Sync()
-	file.Close()
+	_ = file.Sync()
+	_ = file.Close()
 
 	// Verify file was written
 	stat, err := os.Stat(corruptedPath)
@@ -214,9 +216,10 @@ func TestRecoveryEngine_MarshalUnmarshalRoundtrip(t *testing.T) {
 	// Test that a record created with Marshal can be read by recovery
 	eventData := []byte(`{"test":"data","value":123}`)
 	record := &Record{
-		Magic:     MagicHeader,
-		Version:   Version,
-		Flags:     0,
+		Magic:   MagicHeader,
+		Version: Version,
+		Flags:   0,
+		// #nosec G115 - test event data
 		Length:    uint32(len(eventData)),
 		Timestamp: time.Now().UnixNano(),
 		Sequence:  42,
@@ -273,29 +276,30 @@ func createValidRecord(sequence uint64, eventData []byte) []byte {
 
 	// Write in EXACT order from Marshal()
 	// 1. Magic (4 bytes)
-	binary.Write(&buf, binary.LittleEndian, uint32(MagicHeader))
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(MagicHeader))
 
 	// 2. Version (2 bytes)
-	binary.Write(&buf, binary.LittleEndian, uint16(Version))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(Version))
 
 	// 3. Flags (2 bytes)
-	binary.Write(&buf, binary.LittleEndian, uint16(0))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0))
 
 	// 4. Length (4 bytes) - This is EventData length, NOT total!
-	binary.Write(&buf, binary.LittleEndian, uint32(len(eventData)))
+	// #nosec G115 - test data length
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(len(eventData)))
 
 	// 5. Timestamp (8 bytes)
-	binary.Write(&buf, binary.LittleEndian, timestamp)
+	_ = binary.Write(&buf, binary.LittleEndian, timestamp)
 
 	// Calculate header CRC over first 20 bytes (Magic through Timestamp)
 	headerBytes := buf.Bytes()
 	crc32Header := crc32.ChecksumIEEE(headerBytes)
 
 	// 6. CRC32Header (4 bytes)
-	binary.Write(&buf, binary.LittleEndian, crc32Header)
+	_ = binary.Write(&buf, binary.LittleEndian, crc32Header)
 
 	// 7. Sequence (8 bytes)
-	binary.Write(&buf, binary.LittleEndian, sequence)
+	_ = binary.Write(&buf, binary.LittleEndian, sequence)
 
 	// 8. PrevHash (32 bytes of zeros)
 	var prevHash [32]byte
@@ -309,10 +313,10 @@ func createValidRecord(sequence uint64, eventData []byte) []byte {
 	crc32Data := crc32.ChecksumIEEE(allBytes)
 
 	// 10. CRC32Data (4 bytes)
-	binary.Write(&buf, binary.LittleEndian, crc32Data)
+	_ = binary.Write(&buf, binary.LittleEndian, crc32Data)
 
 	// 11. MagicEnd (4 bytes)
-	binary.Write(&buf, binary.LittleEndian, uint32(MagicFooter))
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(MagicFooter))
 
 	return buf.Bytes()
 }

@@ -145,7 +145,7 @@ func (m *Monitor) RecordLatency(duration time.Duration) {
 }
 
 // RecordError records an error
-func (m *Monitor) RecordError(err error) {
+func (m *Monitor) RecordError(_ error) {
 	m.IncrementErrorCount()
 	EventsWritten.WithLabelValues("failure", "unknown").Inc()
 }
@@ -157,19 +157,19 @@ func (m *Monitor) RecordEmit() {
 }
 
 // RecordCriticalFailure records a critical failure
-func (m *Monitor) RecordCriticalFailure(err error) {
+func (m *Monitor) RecordCriticalFailure(_ error) {
 	m.IncrementErrorCount()
 	UpdateIntegrityScore(0) // Critical failure drops integrity to 0
 	EventsWritten.WithLabelValues("failure", "audit").Inc()
 }
 
 // RecordBackendError records a backend error
-func (m *Monitor) RecordBackendError(backend string, err error) {
+func (m *Monitor) RecordBackendError(backend string, _ error) {
 	BackendOperations.WithLabelValues(backend, "write", "failure").Inc()
 }
 
 // RecordBackendFailure records a backend failure
-func (m *Monitor) RecordBackendFailure(backend string, err error) {
+func (m *Monitor) RecordBackendFailure(backend string, _ error) {
 	m.IncrementErrorCount()
 	BackendOperations.WithLabelValues(backend, "write", "failure").Inc()
 }
@@ -287,7 +287,7 @@ func (m *Monitor) updateMetrics(lastEventCount *int64) {
 	if m.enableProfiler {
 		var memStats runtime.MemStats
 		runtime.ReadMemStats(&memStats)
-		UpdateMemoryUsage(int64(memStats.Alloc))
+		UpdateMemoryUsage(int64(memStats.Alloc)) // #nosec G115 - memory size conversion
 	}
 }
 
@@ -356,7 +356,10 @@ type Health struct {
 type HealthStatus string
 
 const (
-	HealthStatusHealthy   HealthStatus = "healthy"
-	HealthStatusDegraded  HealthStatus = "degraded"
+	// HealthStatusHealthy indicates the system is operating normally.
+	HealthStatusHealthy HealthStatus = "healthy"
+	// HealthStatusDegraded indicates degraded performance.
+	HealthStatusDegraded HealthStatus = "degraded"
+	// HealthStatusUnhealthy indicates the system is unhealthy.
 	HealthStatusUnhealthy HealthStatus = "unhealthy"
 )

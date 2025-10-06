@@ -106,6 +106,7 @@ func New(path string, opts ...Option) (*WAL, error) {
 	// Note: We don't use O_SYNC as we do explicit syncing
 	flags := os.O_CREATE | os.O_RDWR | os.O_APPEND
 
+	// #nosec G304 - WAL path from user configuration
 	file, err := os.OpenFile(activePath, flags, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WAL file: %w", err)
@@ -114,22 +115,23 @@ func New(path string, opts ...Option) (*WAL, error) {
 	// Get file size
 	stat, err := file.Stat()
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("failed to stat WAL file: %w", err)
 	}
 
 	// Initialize double-write buffer for torn-write protection
 	journalPath := path + ".journal"
+	// #nosec G304 - journal path derived from user-specified WAL path
 	journalFile, err := os.OpenFile(journalPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("failed to open journal file: %w", err)
 	}
 
 	doubleWrite, err := NewDoubleWriteBuffer(journalFile, cfg.bufferSize)
 	if err != nil {
-		file.Close()
-		journalFile.Close()
+		_ = file.Close()
+		_ = journalFile.Close()
 		return nil, fmt.Errorf("failed to create double-write buffer: %w", err)
 	}
 
@@ -147,16 +149,16 @@ func New(path string, opts ...Option) (*WAL, error) {
 
 	// Recover from journal first (for torn-write protection)
 	if err := w.recoverFromJournal(); err != nil {
-		file.Close()
-		journalFile.Close()
+		_ = file.Close()
+		_ = journalFile.Close()
 		return nil, fmt.Errorf("failed to recover from journal: %w", err)
 	}
 
 	// Recover from existing WAL if present
 	if stat.Size() > 0 {
 		if err := w.recover(); err != nil {
-			file.Close()
-			journalFile.Close()
+			_ = file.Close()
+			_ = journalFile.Close()
 			return nil, fmt.Errorf("failed to recover WAL: %w", err)
 		}
 	}
@@ -216,12 +218,12 @@ func (w *WAL) Write(event *core.LogEvent) error {
 	n, err := w.file.Write(data)
 	if err != nil {
 		// Mark journal entry as incomplete
-		w.doubleWrite.MarkIncomplete()
+		_ = w.doubleWrite.MarkIncomplete()
 		return fmt.Errorf("write failed: %w", err)
 	}
 	if n != len(data) {
 		// Mark journal entry as incomplete
-		w.doubleWrite.MarkIncomplete()
+		_ = w.doubleWrite.MarkIncomplete()
 		return fmt.Errorf("incomplete write: wrote %d of %d bytes", n, len(data))
 	}
 
@@ -400,7 +402,7 @@ func (w *WAL) readAllRecords() ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer w.file.Seek(currentPos, 0)
+	defer func() { _, _ = w.file.Seek(currentPos, 0) }()
 
 	// Seek to beginning
 	_, err = w.file.Seek(0, 0)
@@ -538,6 +540,7 @@ func (w *WAL) rotate() error {
 		flags |= os.O_SYNC
 	}
 
+	// #nosec G304 - segment path generated internally from controlled sequence
 	file, err := os.OpenFile(newPath, flags, 0600)
 	if err != nil {
 		return err
@@ -553,7 +556,7 @@ func (w *WAL) flushLoop() {
 	for {
 		select {
 		case <-w.flushTicker.C:
-			w.Flush()
+			_ = w.Flush()
 		case <-w.flushStop:
 			return
 		}
@@ -598,6 +601,6 @@ func (w *WAL) GetSegments() []*Segment {
 	defer w.mu.Unlock()
 
 	// Update segment sizes before returning
-	w.segments.UpdateSegmentSizes()
+	_ = w.segments.UpdateSegmentSizes()
 	return w.segments.GetSegments()
 }

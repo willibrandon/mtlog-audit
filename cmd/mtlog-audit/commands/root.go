@@ -42,7 +42,7 @@ func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version information",
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			logger.Log.Info("mtlog-audit version {version}", version)
 		},
 	}

@@ -1,3 +1,4 @@
+// Package compliance provides tests for compliance engine functionality.
 package compliance
 
 import (

@@ -87,7 +87,7 @@ func (idx *Index) indexSegment(seg *Segment) (SegmentInfo, error) {
 	if err != nil {
 		return info, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	stat, err := file.Stat()
 	if err != nil {
@@ -120,6 +120,7 @@ func (idx *Index) indexSegment(seg *Segment) (SegmentInfo, error) {
 		version := binary.LittleEndian.Uint16(headerBuf[4:6])
 		flags := binary.LittleEndian.Uint16(headerBuf[6:8])
 		length := binary.LittleEndian.Uint32(headerBuf[8:12])
+		// #nosec G115 - timestamp from binary format
 		timestamp := int64(binary.LittleEndian.Uint64(headerBuf[12:20]))
 		crc32Header := binary.LittleEndian.Uint32(headerBuf[20:24])
 
@@ -138,9 +139,10 @@ func (idx *Index) indexSegment(seg *Segment) (SegmentInfo, error) {
 
 		// Create index entry
 		entry := IndexEntry{
-			Sequence:  sequence,
-			Segment:   seg.Path,
-			Offset:    offset,
+			Sequence: sequence,
+			Segment:  seg.Path,
+			Offset:   offset,
+			// #nosec G115 - length validated, bounded by max record size
 			Size:      int32(length),
 			Timestamp: time.Unix(0, timestamp),
 			Checksum:  crc32Header,
@@ -276,7 +278,7 @@ func (idx *Index) GetSegmentInfo() []SegmentInfo {
 }
 
 // GetSequenceRange returns the min and max sequence numbers in the index
-func (idx *Index) GetSequenceRange() (min, max uint64) {
+func (idx *Index) GetSequenceRange() (minSeq, maxSeq uint64) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -284,9 +286,9 @@ func (idx *Index) GetSequenceRange() (min, max uint64) {
 		return 0, 0
 	}
 
-	min = idx.segments[0].StartSeq
-	max = idx.segments[len(idx.segments)-1].EndSeq
-	return min, max
+	minSeq = idx.segments[0].StartSeq
+	maxSeq = idx.segments[len(idx.segments)-1].EndSeq
+	return minSeq, maxSeq
 }
 
 // AddEntry adds a new entry to the index
@@ -335,11 +337,12 @@ func (idx *Index) RemoveSegment(path string) {
 // persist saves the index to disk for fast recovery
 func (idx *Index) persist() error {
 	indexPath := idx.path + ".idx"
+	// #nosec G304 - index path derived from controlled WAL path
 	file, err := os.Create(indexPath)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Write version
 	if err := binary.Write(file, binary.LittleEndian, uint32(1)); err != nil {
@@ -347,6 +350,7 @@ func (idx *Index) persist() error {
 	}
 
 	// Write segment count
+	// #nosec G115 - segment count bounded
 	if err := binary.Write(file, binary.LittleEndian, uint32(len(idx.segments))); err != nil {
 		return err
 	}
@@ -369,12 +373,14 @@ func (idx *Index) persist() error {
 		if err := binary.Write(file, binary.LittleEndian, seg.Size); err != nil {
 			return err
 		}
+		// #nosec G115 - record count bounded
 		if err := binary.Write(file, binary.LittleEndian, int32(seg.RecordCount)); err != nil {
 			return err
 		}
 
 		// Write path
 		pathBytes := []byte(seg.Path)
+		// #nosec G115 - path length bounded by max path
 		if err := binary.Write(file, binary.LittleEndian, uint16(len(pathBytes))); err != nil {
 			return err
 		}
@@ -392,6 +398,7 @@ func (idx *Index) Load() error {
 	defer idx.mu.Unlock()
 
 	indexPath := idx.path + ".idx"
+	// #nosec G304 - index path derived from controlled WAL path
 	file, err := os.Open(indexPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -399,7 +406,7 @@ func (idx *Index) Load() error {
 		}
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Read version
 	var version uint32
@@ -472,10 +479,10 @@ func (idx *Index) Load() error {
 			// Skip segments that can't be opened
 			continue
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		// Re-scan segment to rebuild entries
-		idx.scanSegmentForEntries(file, seg.Path)
+		_ = idx.scanSegmentForEntries(file, seg.Path)
 	}
 
 	return nil
@@ -509,6 +516,7 @@ func (idx *Index) scanSegmentForEntries(file *os.File, path string) error {
 
 		flags := binary.LittleEndian.Uint16(headerBuf[6:8])
 		length := binary.LittleEndian.Uint32(headerBuf[8:12])
+		// #nosec G115 - timestamp from binary format
 		timestamp := int64(binary.LittleEndian.Uint64(headerBuf[12:20]))
 		crc32Header := binary.LittleEndian.Uint32(headerBuf[20:24])
 
@@ -520,9 +528,10 @@ func (idx *Index) scanSegmentForEntries(file *os.File, path string) error {
 
 		// Create index entry
 		entry := IndexEntry{
-			Sequence:  sequence,
-			Segment:   path,
-			Offset:    offset,
+			Sequence: sequence,
+			Segment:  path,
+			Offset:   offset,
+			// #nosec G115 - length validated, bounded by max record size
 			Size:      int32(length),
 			Timestamp: time.Unix(0, timestamp),
 			Checksum:  crc32Header,

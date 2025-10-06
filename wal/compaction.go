@@ -352,11 +352,12 @@ func (c *Compactor) compactSegmentGroup(segments []*Segment) (int64, error) {
 
 	// Create new compacted segment
 	compactedPath := c.generateCompactedSegmentPath(segments[0].StartSeq, segments[len(segments)-1].EndSeq)
+	// #nosec G304 - compacted segment path generated internally from controlled sequences
 	compactedFile, err := os.OpenFile(compactedPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL|os.O_SYNC, 0600)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create compacted segment: %w", err)
 	}
-	defer compactedFile.Close()
+	defer func() { _ = compactedFile.Close() }()
 
 	// Track written sequences to eliminate duplicates
 	writtenSeqs := make(map[uint64]bool)
@@ -367,7 +368,7 @@ func (c *Compactor) compactSegmentGroup(segments []*Segment) (int64, error) {
 	for _, seg := range segments {
 		records, err := c.readSegmentRecords(seg)
 		if err != nil {
-			os.Remove(compactedPath)
+			_ = os.Remove(compactedPath)
 			return 0, fmt.Errorf("failed to read segment %s: %w", seg.Path, err)
 		}
 
@@ -388,13 +389,13 @@ func (c *Compactor) compactSegmentGroup(segments []*Segment) (int64, error) {
 			// Write record to compacted segment
 			data, err := record.Marshal()
 			if err != nil {
-				os.Remove(compactedPath)
+				_ = os.Remove(compactedPath)
 				return 0, fmt.Errorf("failed to marshal record: %w", err)
 			}
 
 			n, err := compactedFile.Write(data)
 			if err != nil {
-				os.Remove(compactedPath)
+				_ = os.Remove(compactedPath)
 				return 0, fmt.Errorf("failed to write record: %w", err)
 			}
 
@@ -406,7 +407,7 @@ func (c *Compactor) compactSegmentGroup(segments []*Segment) (int64, error) {
 
 	// Sync and close the compacted file
 	if err := compactedFile.Sync(); err != nil {
-		os.Remove(compactedPath)
+		_ = os.Remove(compactedPath)
 		return 0, fmt.Errorf("failed to sync compacted segment: %w", err)
 	}
 
@@ -421,7 +422,7 @@ func (c *Compactor) compactSegmentGroup(segments []*Segment) (int64, error) {
 	}
 
 	if err := c.wal.segments.AddCompactedSegment(compactedSeg); err != nil {
-		os.Remove(compactedPath)
+		_ = os.Remove(compactedPath)
 		return 0, fmt.Errorf("failed to register compacted segment: %w", err)
 	}
 
@@ -451,7 +452,7 @@ func (c *Compactor) readSegmentRecords(seg *Segment) ([]*Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var records []*Record
 
@@ -513,17 +514,19 @@ func (c *Compactor) archiveSegment(seg *Segment) error {
 
 // copyFile copies a file from src to dst
 func (c *Compactor) copyFile(src, dst string) error {
+	// #nosec G304 - file paths controlled internally by compaction process
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
+	defer func() { _ = srcFile.Close() }()
 
+	// #nosec G304 - file paths controlled internally by compaction process
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer dstFile.Close()
+	defer func() { _ = dstFile.Close() }()
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
@@ -736,36 +739,37 @@ func (c *Compactor) MarkDeleted(sequence uint64) error {
 
 	// Create a temporary file for the updated segment
 	tempPath := targetSegment.Path + ".tmp"
+	// #nosec G304 - temp file path derived from controlled segment path
 	tempFile, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL|os.O_SYNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer tempFile.Close()
+	defer func() { _ = tempFile.Close() }()
 
 	// Write all records with the updated flags
 	for _, record := range records {
 		data, err := record.Marshal()
 		if err != nil {
-			os.Remove(tempPath)
+			_ = os.Remove(tempPath)
 			return fmt.Errorf("failed to marshal record: %w", err)
 		}
 
 		if _, err := tempFile.Write(data); err != nil {
-			os.Remove(tempPath)
+			_ = os.Remove(tempPath)
 			return fmt.Errorf("failed to write record: %w", err)
 		}
 	}
 
 	// Sync and close temp file
 	if err := tempFile.Sync(); err != nil {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
-	tempFile.Close()
+	_ = tempFile.Close()
 
 	// Atomically replace the original segment
 	if err := os.Rename(tempPath, targetSegment.Path); err != nil {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return fmt.Errorf("failed to replace segment: %w", err)
 	}
 

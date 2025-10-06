@@ -45,14 +45,14 @@ func TestWALReadWrite(t *testing.T) {
 			t.Fatalf("Failed to write event: %v", err)
 		}
 	}
-	w.Close()
+	_ = w.Close()
 
 	// Read events back
 	reader, err := NewReader(walPath)
 	if err != nil {
 		t.Fatalf("Failed to create reader: %v", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	readEvents, err := reader.ReadAll()
 	if err != nil {
@@ -113,14 +113,14 @@ func TestWALReadRange(t *testing.T) {
 			t.Fatalf("Failed to write event: %v", err)
 		}
 	}
-	w.Close()
+	_ = w.Close()
 
 	// Read events in time range
 	reader, err := NewReader(walPath)
 	if err != nil {
 		t.Fatalf("Failed to create reader: %v", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Read only middle and recent events
 	start := now.Add(-90 * time.Minute)
@@ -160,14 +160,14 @@ func TestWALReaderCorruption(t *testing.T) {
 	if err := w.Write(event); err != nil {
 		t.Fatalf("Failed to write event: %v", err)
 	}
-	w.Close()
+	_ = w.Close()
 
 	// Read should succeed
 	reader, err := NewReader(walPath)
 	if err != nil {
 		t.Fatalf("Failed to create reader: %v", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	events, err := reader.ReadAll()
 	if err != nil {
@@ -188,14 +188,14 @@ func TestWALReaderEmptyFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Close()
+	_ = w.Close()
 
 	// Read from empty WAL
 	reader, err := NewReader(walPath)
 	if err != nil {
 		t.Fatalf("Failed to create reader: %v", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	events, err := reader.ReadAll()
 	if err != nil {
@@ -228,14 +228,14 @@ func TestWALReaderSeek(t *testing.T) {
 			t.Fatalf("Failed to write event: %v", err)
 		}
 	}
-	w.Close()
+	_ = w.Close()
 
 	// Create reader
 	reader, err := NewReader(walPath)
 	if err != nil {
 		t.Fatalf("Failed to create reader: %v", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Read first event and remember offset
 	firstEvent, err := reader.ReadNext()

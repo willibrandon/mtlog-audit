@@ -112,7 +112,7 @@ func (r *RecoveryEngine) Recover() (*RecoveryReport, [][]byte, error) {
 	if err != nil {
 		return report, nil, fmt.Errorf("failed to open WAL for recovery: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var records [][]byte
 	offset := int64(0)
@@ -221,6 +221,7 @@ func (r *RecoveryEngine) readNextRecord(file *os.File, offset int64) (*Recovered
 	}
 
 	// Sanity check data length
+	// #nosec G115 - comparison with validated max size
 	if dataLength > uint32(r.maxRecordSize) {
 		return nil, fmt.Errorf("data length %d exceeds max %d", dataLength, r.maxRecordSize)
 	}
@@ -428,11 +429,12 @@ func (r *RecoveryEngine) RepairWAL(outputPath string) error {
 	logger.Log.Info("Recovered {count} records, writing to new WAL", report.RecoveredRecords)
 
 	// Create new WAL file
+	// #nosec G304 - output path from user-specified recovery destination
 	output, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_SYNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create output WAL: %w", err)
 	}
-	defer output.Close()
+	defer func() { _ = output.Close() }()
 
 	// Write recovered records to new WAL
 	var lastHash [32]byte
@@ -447,12 +449,14 @@ func (r *RecoveryEngine) RepairWAL(outputPath string) error {
 
 		// Properly reconstruct the record with correct metadata
 		record := &Record{
-			Magic:     MagicHeader,
-			Version:   Version,
+			Magic:   MagicHeader,
+			Version: Version,
+			// #nosec G115 - loop index bounded
 			Sequence:  uint64(i + 1),
 			PrevHash:  lastHash,
 			EventData: recordData,
 			MagicEnd:  MagicFooter,
+			// #nosec G115 - record data length validated
 			Length:    uint32(len(recordData)),
 			Timestamp: timestamp,
 			Flags:     0, // Reset flags for repaired records
@@ -533,6 +537,7 @@ func (r *RecoveryEngine) buildHashChainMap(records [][]byte) {
 
 		// Create a minimal record just for hash computation
 		record := &Record{
+			// #nosec G115 - loop index bounded
 			Sequence:  uint64(i + 1),
 			EventData: recordData,
 		}
@@ -550,7 +555,7 @@ func (r *RecoveryEngine) reconstructHashChains(report *RecoveryReport) [][]byte 
 	if err != nil {
 		return reconstructed
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	offset := int64(0)
 	stat, _ := file.Stat()
@@ -639,6 +644,7 @@ func (r *RecoveryEngine) attemptHashReconstruction(file *os.File, offset int64, 
 			headerCRC := binary.LittleEndian.Uint32(buffer[i+20:])
 
 			// Validate header structure
+			// #nosec G115 - validated max size
 			if version != Version || length > uint32(r.maxRecordSize) {
 				continue
 			}
@@ -793,9 +799,12 @@ func (r *RecoveryEngine) attemptCRCReconstruction(data []byte, expectedHeaderCRC
 // attemptPatternReconstruction uses pattern matching to validate records
 func (r *RecoveryEngine) attemptPatternReconstruction(data []byte, timestamp uint64, flags uint16) bool {
 	// Check timestamp is reasonable (within last 10 years)
+	// #nosec G115 - timestamp conversion
 	now := uint64(time.Now().UnixNano())
+	// #nosec G115 - time duration
 	tenYearsAgo := now - uint64(10*365*24*time.Hour.Nanoseconds())
 
+	// #nosec G115 - time duration conversion for validation
 	if timestamp < tenYearsAgo || timestamp > now+uint64(24*time.Hour.Nanoseconds()) {
 		return false
 	}
@@ -862,8 +871,9 @@ func (r *RecoveryEngine) attemptDeepForensicRecovery(buffer []byte, n int) *Reco
 					// Successfully parsed as log event!
 					// Reconstruct a minimal record
 					return &RecoveredRecord{
-						EventData:      jsonData,
-						Sequence:       0, // Unknown
+						EventData: jsonData,
+						Sequence:  0, // Unknown
+						// #nosec G115 - timestamp conversion
 						Timestamp:      uint64(event.Timestamp.UnixNano()),
 						BytesRead:      j - i,
 						HashChainValid: false,
@@ -884,7 +894,7 @@ func (r *RecoveryEngine) recoverPartialRecords() [][]byte {
 	if err != nil {
 		return partialRecords
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Read file in chunks and look for partial records at boundaries
 	stat, _ := file.Stat()
@@ -892,7 +902,7 @@ func (r *RecoveryEngine) recoverPartialRecords() [][]byte {
 
 	// Check last 10KB for partial records
 	if fileSize > 10240 {
-		file.Seek(fileSize-10240, 0)
+		_, _ = file.Seek(fileSize-10240, 0)
 		buffer := make([]byte, 10240)
 		n, _ := file.Read(buffer)
 
@@ -940,6 +950,7 @@ func (r *RecoveryEngine) extractPartialData(data []byte) []byte {
 
 	// Try to extract event data portion
 	length := binary.LittleEndian.Uint32(data[8:])
+	// #nosec G115 - data length check
 	if length > 0 && length < uint32(len(data)-72) {
 		eventData := data[72 : 72+length]
 
@@ -974,12 +985,4 @@ func (r *RecoveryEngine) recoverFromShadow() [][]byte {
 	}
 
 	return shadowRecords
-}
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

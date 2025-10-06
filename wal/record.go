@@ -20,7 +20,7 @@ const (
 	// Version is the WAL format version
 	Version = 1
 
-	// Record flags
+	// RecordFlagDeleted marks a record as deleted.
 	RecordFlagDeleted = 1 << 0 // Record has been marked for deletion
 )
 
@@ -53,9 +53,10 @@ func NewRecord(event *core.LogEvent, sequence uint64, prevHash [32]byte) (*Recor
 	}
 
 	r := &Record{
-		Magic:     MagicHeader,
-		Version:   Version,
-		Flags:     0,
+		Magic:   MagicHeader,
+		Version: Version,
+		Flags:   0,
+		// #nosec G115 - event data length validated against max record size
 		Length:    uint32(len(eventData)),
 		Timestamp: event.Timestamp.UnixNano(),
 		Sequence:  sequence,

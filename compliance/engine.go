@@ -400,7 +400,9 @@ func maskString(s string) string {
 	return s[:2] + strings.Repeat("*", len(s)-4) + s[len(s)-2:]
 }
 
-// ComplianceRecord represents a processed event with compliance metadata
+// ComplianceRecord represents a processed event with compliance metadata.
+//
+//nolint:revive // Name chosen for clarity - Record would be too generic in compliance context
 type ComplianceRecord struct {
 	Timestamp     time.Time         `json:"timestamp"`
 	Profile       string            `json:"profile"`

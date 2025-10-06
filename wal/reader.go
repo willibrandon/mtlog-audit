@@ -20,7 +20,7 @@ type Reader struct {
 
 // NewReader creates a new WAL reader
 func NewReader(path string) (*Reader, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 - controlled path
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WAL: %w", err)
 	}
@@ -152,6 +152,7 @@ func (r *Reader) ReadNext() (*core.LogEvent, error) {
 	crcBuf = append(crcBuf, lengthBytes...)
 	// Timestamp
 	timestampBytes := make([]byte, 8)
+	// #nosec G115 - timestamp conversion always valid
 	binary.LittleEndian.PutUint64(timestampBytes, uint64(timestamp))
 	crcBuf = append(crcBuf, timestampBytes...)
 	// CRC32Header

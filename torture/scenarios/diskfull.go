@@ -35,12 +35,12 @@ func (d *DiskFull) Execute(sink *audit.Sink, dir string) error {
 	fillAt := d.FillAt
 	if fillAt == 0 {
 		// Random fill point between 20% and 80% of events
-		min := d.EventCount / 5
-		max := d.EventCount * 4 / 5
-		if min >= max {
-			min = max - 1
+		minSize := d.EventCount / 5
+		maxSize := d.EventCount * 4 / 5
+		if minSize >= maxSize {
+			minSize = maxSize - 1
 		}
-		fillAt = min + int(time.Now().UnixNano()%int64(max-min+1))
+		fillAt = minSize + int(time.Now().UnixNano()%int64(maxSize-minSize+1))
 	}
 
 	// Write events and simulate disk full
@@ -109,7 +109,7 @@ func (d *DiskFull) Execute(sink *audit.Sink, dir string) error {
 func (d *DiskFull) Verify(dir string) error {
 	// Clean up the disk filler file first
 	dummyFile := filepath.Join(dir, "disk-filler.tmp")
-	os.Remove(dummyFile)
+	_ = os.Remove(dummyFile)
 
 	// Reopen the WAL and verify we can read it
 	sink, err := audit.New(
@@ -118,7 +118,7 @@ func (d *DiskFull) Verify(dir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to reopen WAL: %w", err)
 	}
-	defer sink.Close()
+	defer func() { _ = sink.Close() }()
 
 	// Verify integrity
 	report, err := sink.VerifyIntegrity()
@@ -158,11 +158,12 @@ func (d *DiskFull) simulateDiskFull(filePath string) error {
 	toWrite := available - buffer
 
 	// Create the filler file
+	// #nosec G304 - test file path controlled by test framework
 	file, err := os.Create(filePath)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Write in chunks to fill the disk
 	chunkSize := uint64(1024 * 1024) // 1MB chunks
@@ -191,6 +192,7 @@ func (d *DiskFull) simulateDiskFull(filePath string) error {
 			}
 			return fmt.Errorf("write failed: %w", err)
 		}
+		// #nosec G115 - n is bounded by writeSize which is bounded by chunkSize (1MB)
 		written += uint64(n)
 
 		// Sync periodically to ensure data hits disk
@@ -205,7 +207,7 @@ func (d *DiskFull) simulateDiskFull(filePath string) error {
 	}
 
 	// Final sync to ensure all data is on disk
-	file.Sync()
+	_ = file.Sync()
 
 	return nil
 }

@@ -173,13 +173,6 @@ func (sm *SegmentManager) scanSegments() error {
 	return nil
 }
 
-// parseSequenceFromName attempts to extract sequence numbers from segment filename.
-func (sm *SegmentManager) parseSequenceFromName(segment *Segment) {
-	// Don't try to parse sequence numbers from filename since we use timestamps in the name
-	// The sequence numbers will be determined when reading the actual records
-	// Leave StartSeq and EndSeq as 0, they'll be populated when the segment is read
-}
-
 // cleanupOldSegments removes old segments based on retention policy.
 func (sm *SegmentManager) cleanupOldSegments() error {
 	if len(sm.segments) <= sm.maxSegments {
@@ -226,11 +219,11 @@ func (sm *SegmentManager) ReadAllSegments() ([][]byte, error) {
 
 // readSegment reads all records from a single segment file.
 func (sm *SegmentManager) readSegment(path string) ([][]byte, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 - controlled path
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var records [][]byte
 

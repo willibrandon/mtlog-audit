@@ -62,7 +62,7 @@ func TestStatsCommand(t *testing.T) {
 		}
 	}
 
-	w.Close()
+	_ = w.Close()
 
 	// Test gathering basic stats
 	t.Run("BasicStats", func(t *testing.T) {
@@ -218,7 +218,7 @@ func TestStatsWithCorruption(t *testing.T) {
 	// Since GetSegments is not available, we can't simulate corruption
 	// The test will focus on other aspects
 
-	w.Close()
+	_ = w.Close()
 
 	// Gather stats
 	stats, err := gatherStats(walPath, false)
@@ -261,7 +261,7 @@ func TestStatsFragmentation(t *testing.T) {
 		// Continue writing events to simulate activity
 	}
 
-	w.Close()
+	_ = w.Close()
 
 	// Gather stats
 	stats, err := gatherStats(walPath, false)

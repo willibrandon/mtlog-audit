@@ -21,7 +21,7 @@ This command checks:
 - SHA256 hash chain for tamper detection
 - Record sequence numbers for completeness
 - Magic headers/footers for torn-write detection`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			// Create sink to access the WAL
 			sink, err := audit.New(
 				audit.WithWAL(walPath),
@@ -29,7 +29,7 @@ This command checks:
 			if err != nil {
 				return fmt.Errorf("failed to open WAL: %w", err)
 			}
-			defer sink.Close()
+			defer func() { _ = sink.Close() }()
 
 			// Verify integrity
 			logger.Log.Info("Verifying WAL: {path}", walPath)
@@ -77,7 +77,7 @@ This command checks:
 	}
 
 	cmd.Flags().StringVar(&walPath, "wal", "/var/audit/app.wal", "Path to WAL file")
-	cmd.MarkFlagRequired("wal")
+	_ = cmd.MarkFlagRequired("wal")
 
 	return cmd
 }

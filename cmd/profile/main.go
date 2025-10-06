@@ -1,3 +1,4 @@
+// Package main provides CPU and memory profiling for mtlog-audit.
 package main
 
 import (
@@ -17,7 +18,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := pprof.StartCPUProfile(f); err != nil {
 		panic(err)
@@ -29,7 +30,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create sink
 	sink, err := audit.New(
@@ -38,7 +39,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer sink.Close()
+	defer func() { _ = sink.Close() }()
 
 	// Write 100 events
 	start := time.Now()

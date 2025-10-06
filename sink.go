@@ -78,7 +78,7 @@ func New(opts ...Option) (*Sink, error) {
 
 	// Verify WAL integrity on startup
 	if err := walInstance.VerifyIntegrity(); err != nil {
-		walInstance.Close()
+		_ = walInstance.Close()
 		return nil, fmt.Errorf("WAL integrity check failed: %w", err)
 	}
 
@@ -91,7 +91,7 @@ func New(opts ...Option) (*Sink, error) {
 	if config.ComplianceProfile != "" {
 		sink.compliance, err = compliance.New(config.ComplianceProfile, config.ComplianceOptions...)
 		if err != nil {
-			walInstance.Close()
+			_ = walInstance.Close()
 			return nil, fmt.Errorf("compliance init failed: %w", err)
 		}
 	}
@@ -100,7 +100,7 @@ func New(opts ...Option) (*Sink, error) {
 	for _, backendConfig := range config.BackendConfigs {
 		backend, err := backends.Create(backendConfig)
 		if err != nil {
-			walInstance.Close()
+			_ = walInstance.Close()
 			return nil, fmt.Errorf("failed to create backend: %w", err)
 		}
 		sink.backends = append(sink.backends, backend)
@@ -343,7 +343,7 @@ func (s *Sink) Replay(start, end time.Time) ([]*core.LogEvent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reader: %w", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	if start.IsZero() && end.IsZero() {
 		return reader.ReadAll()

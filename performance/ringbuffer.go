@@ -13,11 +13,11 @@ type RingBuffer struct {
 	buffer   []*core.LogEvent
 	size     uint64
 	mask     uint64
-	padding1 [128]byte // Cache line padding
+	padding1 [128]byte //nolint:unused // Cache line padding - intentionally unused for CPU cache alignment
 	writePos uint64
-	padding2 [128]byte // Cache line padding
+	padding2 [128]byte //nolint:unused // Cache line padding - intentionally unused for CPU cache alignment
 	readPos  uint64
-	padding3 [128]byte // Cache line padding
+	padding3 [128]byte //nolint:unused // Cache line padding - intentionally unused for CPU cache alignment
 }
 
 // NewRingBuffer creates a new ring buffer
@@ -25,6 +25,7 @@ type RingBuffer struct {
 func NewRingBuffer(size int) *RingBuffer {
 	// Round up to next power of 2
 	actualSize := uint64(1)
+	// #nosec G115 - size is bounded by buffer capacity
 	for actualSize < uint64(size) {
 		actualSize <<= 1
 	}
@@ -53,8 +54,11 @@ func (rb *RingBuffer) Write(event *core.LogEvent) bool {
 			index := writePos & rb.mask
 
 			// Store the event
+			// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
+			// #nosec G103 - intentional unsafe for lock-free operations
 			atomic.StorePointer(
 				(*unsafe.Pointer)(unsafe.Pointer(&rb.buffer[index])),
+				// #nosec G103 - intentional unsafe for lock-free operations
 				unsafe.Pointer(event),
 			)
 
@@ -83,11 +87,14 @@ func (rb *RingBuffer) Read() *core.LogEvent {
 			index := readPos & rb.mask
 
 			// Load the event
+			// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
 			event := (*core.LogEvent)(atomic.LoadPointer(
 				(*unsafe.Pointer)(unsafe.Pointer(&rb.buffer[index])),
 			))
 
 			// Clear the slot
+			// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
+			// #nosec G103 - intentional unsafe for lock-free operations
 			atomic.StorePointer(
 				(*unsafe.Pointer)(unsafe.Pointer(&rb.buffer[index])),
 				nil,
@@ -117,9 +124,12 @@ func (rb *RingBuffer) TryWrite(event *core.LogEvent) bool {
 	}
 
 	// Store the event
+	// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
 	index := writePos & rb.mask
+	// #nosec G103 - intentional unsafe for lock-free operations
 	atomic.StorePointer(
 		(*unsafe.Pointer)(unsafe.Pointer(&rb.buffer[index])),
+		// #nosec G103 - intentional unsafe for lock-free operations
 		unsafe.Pointer(event),
 	)
 
@@ -143,11 +153,14 @@ func (rb *RingBuffer) TryRead() *core.LogEvent {
 
 	// Load the event
 	index := readPos & rb.mask
+	// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
 	event := (*core.LogEvent)(atomic.LoadPointer(
 		(*unsafe.Pointer)(unsafe.Pointer(&rb.buffer[index])),
 	))
 
 	// Clear the slot
+	// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
+	// #nosec G103 - intentional unsafe for lock-free operations
 	atomic.StorePointer(
 		(*unsafe.Pointer)(unsafe.Pointer(&rb.buffer[index])),
 		nil,
@@ -185,7 +198,9 @@ func (rb *RingBuffer) Clear() {
 	atomic.StoreUint64(&rb.readPos, 0)
 
 	// Clear all slots
+	// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
 	for i := range rb.buffer {
+		// #nosec G103 - intentional unsafe for lock-free operations
 		atomic.StorePointer(
 			(*unsafe.Pointer)(unsafe.Pointer(&rb.buffer[i])),
 			nil,
@@ -198,18 +213,19 @@ type MultiProducerRingBuffer struct {
 	buffer      []*core.LogEvent
 	size        uint64
 	mask        uint64
-	padding1    [128]byte
+	padding1    [128]byte //nolint:unused // Cache line padding - intentionally unused for CPU cache alignment
 	writePos    uint64
-	padding2    [128]byte
+	padding2    [128]byte //nolint:unused // Cache line padding - intentionally unused for CPU cache alignment
 	writeCommit uint64
-	padding3    [128]byte
+	padding3    [128]byte //nolint:unused // Cache line padding - intentionally unused for CPU cache alignment
 	readPos     uint64
-	padding4    [128]byte
+	padding4    [128]byte //nolint:unused // Cache line padding - intentionally unused for CPU cache alignment
 }
 
 // NewMultiProducerRingBuffer creates a multi-producer ring buffer
 func NewMultiProducerRingBuffer(size int) *MultiProducerRingBuffer {
 	actualSize := uint64(1)
+	// #nosec G115 - size is bounded by buffer capacity
 	for actualSize < uint64(size) {
 		actualSize <<= 1
 	}
@@ -236,8 +252,11 @@ func (mp *MultiProducerRingBuffer) Write(event *core.LogEvent) bool {
 
 	// Write to the slot
 	index := writePos & mp.mask
+	// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
+	// #nosec G103 - intentional unsafe for lock-free operations
 	atomic.StorePointer(
 		(*unsafe.Pointer)(unsafe.Pointer(&mp.buffer[index])),
+		// #nosec G103 - intentional unsafe for lock-free operations
 		unsafe.Pointer(event),
 	)
 
@@ -269,11 +288,14 @@ func (mp *MultiProducerRingBuffer) Read() *core.LogEvent {
 
 	// Read from the slot
 	index := readPos & mp.mask
+	// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
 	event := (*core.LogEvent)(atomic.LoadPointer(
 		(*unsafe.Pointer)(unsafe.Pointer(&mp.buffer[index])),
 	))
 
 	// Clear the slot
+	// #nosec G103 - Intentional unsafe usage for lock-free atomic operations
+	// #nosec G103 - intentional unsafe for lock-free operations
 	atomic.StorePointer(
 		(*unsafe.Pointer)(unsafe.Pointer(&mp.buffer[index])),
 		nil,

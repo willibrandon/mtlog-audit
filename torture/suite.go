@@ -207,6 +207,7 @@ func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration
 	dir := fmt.Sprintf("%s/torture-w%d-i%d-%d",
 		s.config.TempDir, workerID, iteration, time.Now().UnixNano())
 
+	// #nosec G301 - test directory permissions appropriate for test isolation
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		result.mu.Lock()
 		result.Failed++
@@ -214,7 +215,7 @@ func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration
 		result.mu.Unlock()
 		return
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create sink with batch sync for performance
 	sink, err := audit.New(
@@ -235,12 +236,12 @@ func (s *Suite) runScenarioParallel(scenario Scenario, report *Report, iteration
 		result.Failed++
 		result.Errors = append(result.Errors, err)
 		result.mu.Unlock()
-		sink.Close()
+		_ = sink.Close()
 		return
 	}
 
 	// Close sink (simulates crash/shutdown)
-	sink.Close()
+	_ = sink.Close()
 
 	// Verify results
 	if err := scenario.Verify(dir); err != nil {
@@ -269,7 +270,7 @@ func (s *Suite) runScenario(scenario Scenario, report *Report) error {
 		result.Errors = append(result.Errors, err)
 		return err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create sink with batch sync for performance
 	sink, err := audit.New(
@@ -286,12 +287,12 @@ func (s *Suite) runScenario(scenario Scenario, report *Report) error {
 	if err := scenario.Execute(sink, dir); err != nil {
 		result.Failed++
 		result.Errors = append(result.Errors, err)
-		sink.Close()
+		_ = sink.Close()
 		return err
 	}
 
 	// Close sink (simulates crash/shutdown)
-	sink.Close()
+	_ = sink.Close()
 
 	// Verify results
 	if err := scenario.Verify(dir); err != nil {

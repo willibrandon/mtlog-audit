@@ -33,7 +33,7 @@ This command can:
 
 Example:
   mtlog-audit recover --wal /var/audit/corrupted.wal --output /var/audit/repaired.wal`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			logger.Log.Info("Starting recovery of {path}", walPath)
 
 			// Create recovery engine
@@ -108,7 +108,7 @@ Example:
 	cmd.Flags().BoolVar(&verifyChecksum, "verify-checksum", true, "Verify CRC32 checksums during recovery")
 	cmd.Flags().Int64Var(&maxRecordSize, "max-record-size", 10*1024*1024, "Maximum expected record size in bytes")
 
-	cmd.MarkFlagRequired("wal")
+	_ = cmd.MarkFlagRequired("wal")
 
 	return cmd
 }

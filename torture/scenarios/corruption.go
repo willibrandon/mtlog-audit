@@ -38,9 +38,10 @@ func (r *RandomCorruption) Execute(sink *audit.Sink, dir string) error {
 	corruptAt := r.CorruptAt
 	if corruptAt == 0 {
 		// Random corruption point between 30% and 90% of events
-		min := r.EventCount * 3 / 10
-		max := r.EventCount * 9 / 10
-		corruptAt = min + int(rand.Int63n(int64(max-min+1)))
+		minSeq := r.EventCount * 3 / 10
+		maxSeq := r.EventCount * 9 / 10
+		// #nosec G404 - weak random acceptable for test scenario randomization
+		corruptAt = minSeq + int(rand.Int63n(int64(maxSeq-minSeq+1)))
 	}
 
 	// Write events and simulate corruption
@@ -66,7 +67,8 @@ func (r *RandomCorruption) Execute(sink *audit.Sink, dir string) error {
 				Properties: map[string]interface{}{
 					"Index":     i,
 					"Timestamp": time.Now().UnixNano(),
-					"Random":    rand.Int63(),
+					// #nosec G404 - weak random acceptable for test data generation
+					"Random": rand.Int63(),
 				},
 			}
 
@@ -78,6 +80,7 @@ func (r *RandomCorruption) Execute(sink *audit.Sink, dir string) error {
 				time.Sleep(10 * time.Millisecond)
 
 				// Corrupt the WAL file
+				// #nosec G304 - test file path controlled by test framework
 				if err := r.corruptWALFile(filepath.Join(dir, "test.wal")); err != nil {
 					select {
 					case errors <- fmt.Errorf("failed to corrupt WAL: %w", err):
@@ -114,7 +117,7 @@ func (r *RandomCorruption) Verify(dir string) error {
 		// Corruption was detected during initialization - this is expected
 		return nil
 	}
-	defer sink.Close()
+	defer func() { _ = sink.Close() }()
 
 	// Try to verify integrity - this should detect corruption
 	report, err := sink.VerifyIntegrity()
@@ -156,6 +159,7 @@ func (r *RandomCorruption) corruptWALFile(walPath string) error {
 	}
 
 	// Read the file
+	// #nosec G304 - test file path controlled by test framework
 	data, err := os.ReadFile(walPath)
 	if err != nil {
 		return err
@@ -181,6 +185,7 @@ func (r *RandomCorruption) corruptWALFile(walPath string) error {
 // corruptBitFlip flips random bits in the file
 func (r *RandomCorruption) corruptBitFlip(walPath string, data []byte) error {
 	// Flip 1-5 random bits
+	// #nosec G404 - weak random acceptable for test corruption
 	numBits := 1 + rand.Intn(5)
 
 	for i := 0; i < numBits; i++ {
@@ -189,7 +194,9 @@ func (r *RandomCorruption) corruptBitFlip(walPath string, data []byte) error {
 		}
 
 		// Choose random byte and bit position
+		// #nosec G404 - weak random acceptable for test corruption
 		bytePos := rand.Intn(len(data))
+		// #nosec G404 - weak random acceptable for test corruption
 		bitPos := rand.Intn(8)
 
 		// Flip the bit
@@ -206,6 +213,7 @@ func (r *RandomCorruption) corruptTruncate(walPath string, data []byte) error {
 	}
 
 	// Truncate somewhere in the last 50% of the file
+	// #nosec G404 - weak random acceptable for test corruption
 	truncateAt := len(data)/2 + rand.Intn(len(data)/2)
 
 	return os.WriteFile(walPath, data[:truncateAt], 0600)
@@ -223,11 +231,16 @@ func (r *RandomCorruption) corruptOverwrite(walPath string, data []byte) error {
 		maxSize = len(data) / 2
 	}
 
+	// #nosec G404 - weak random acceptable for test corruption
 	overwriteSize := 1 + rand.Intn(maxSize)
+	// #nosec G404 - weak random acceptable for test corruption
 	startPos := rand.Intn(len(data) - overwriteSize)
 
 	// Generate random data
 	randomData := make([]byte, overwriteSize)
+	// #nosec G404 - weak random acceptable for test corruption
+	// #nosec G104 - Read from math/rand never fails
+	//nolint:staticcheck // Using math/rand for test corruption - deterministic randomness acceptable
 	rand.Read(randomData)
 
 	// Overwrite the section

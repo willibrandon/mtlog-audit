@@ -43,7 +43,7 @@ func NewEd25519Signer() (*Ed25519Signer, error) {
 
 // LoadEd25519Signer loads an Ed25519 signer from a PEM file
 func LoadEd25519Signer(privateKeyPath string) (*Ed25519Signer, error) {
-	keyData, err := os.ReadFile(privateKeyPath)
+	keyData, err := os.ReadFile(privateKeyPath) // #nosec G304 - configured key path
 	if err != nil {
 		return nil, fmt.Errorf("failed to read private key: %w", err)
 	}

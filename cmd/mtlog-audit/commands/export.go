@@ -40,7 +40,7 @@ Examples:
   # Export events in time range with pretty JSON
   mtlog-audit export --wal /var/audit/app.wal --output events.json --pretty \
     --start "2024-01-01T00:00:00Z" --end "2024-01-31T23:59:59Z"`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			// Parse time range
 			start, end, err := parseTimeRange(startStr, endStr)
 			if err != nil {
@@ -52,7 +52,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("failed to open WAL: %w", err)
 			}
-			defer reader.Close()
+			defer func() { _ = reader.Close() }()
 
 			// Read events in range
 			logger.Log.Info("Reading events from WAL...")
@@ -84,8 +84,8 @@ Examples:
 	cmd.Flags().StringVar(&endStr, "end", "", "End time (RFC3339 or relative like 'now')")
 	cmd.Flags().BoolVar(&pretty, "pretty", false, "Pretty print JSON output")
 
-	cmd.MarkFlagRequired("wal")
-	cmd.MarkFlagRequired("output")
+	_ = cmd.MarkFlagRequired("wal")
+	_ = cmd.MarkFlagRequired("output")
 
 	return cmd
 }
@@ -145,11 +145,11 @@ func parseTime(s string) (time.Time, error) {
 
 // exportJSON exports events to JSON format.
 func exportJSON(events []*core.LogEvent, output string, pretty bool) error {
-	file, err := os.Create(output)
+	file, err := os.Create(output) // #nosec G304 - user-specified output path
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	encoder := json.NewEncoder(file)
 	if pretty {
@@ -167,11 +167,11 @@ func exportJSON(events []*core.LogEvent, output string, pretty bool) error {
 
 // exportJSONL exports events to JSON Lines format (one JSON object per line).
 func exportJSONL(events []*core.LogEvent, output string) error {
-	file, err := os.Create(output)
+	file, err := os.Create(output) // #nosec G304 - user-specified output path
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	encoder := json.NewEncoder(file)
 
@@ -188,11 +188,11 @@ func exportJSONL(events []*core.LogEvent, output string) error {
 
 // exportCSV exports events to CSV format.
 func exportCSV(events []*core.LogEvent, output string) error {
-	file, err := os.Create(output)
+	file, err := os.Create(output) // #nosec G304 - user-specified output path
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	writer := csv.NewWriter(file)
 	defer writer.Flush()

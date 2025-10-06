@@ -14,10 +14,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
 	"github.com/aws/aws-sdk-go/aws"
+	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
 	"github.com/aws/aws-sdk-go/aws/session"
+	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
 	"github.com/aws/aws-sdk-go/service/s3"
+	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/willibrandon/mtlog-audit/monitoring"
 	"github.com/willibrandon/mtlog/core"
@@ -419,7 +424,7 @@ func (s *S3Backend) downloadAndParse(key string) ([]*core.LogEvent, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer gzReader.Close()
+		defer func() { _ = gzReader.Close() }()
 		reader = gzReader
 	}
 
@@ -627,7 +632,7 @@ func (s *S3Backend) configureObjectLock() error {
 }
 
 // generateTimeRangePrefix generates an S3 prefix for a time range
-func (s *S3Backend) generateTimeRangePrefix(start, end time.Time) string {
+func (s *S3Backend) generateTimeRangePrefix(start, _ time.Time) string {
 	// Use the start date for prefix
 	prefix := path.Join(s.prefix, start.Format("2006/01/02/"))
 	return prefix
@@ -667,7 +672,7 @@ func isMinIORunning(endpoint string) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return resp.StatusCode == 200
 }
@@ -683,7 +688,7 @@ func isLocalStackRunning(endpoint string) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return resp.StatusCode == 200
 }

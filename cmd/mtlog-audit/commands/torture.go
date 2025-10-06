@@ -33,7 +33,7 @@ Examples:
   mtlog-audit torture --iterations 1000 --scenario kill9
   mtlog-audit torture --iterations 10000 --parallel 8  # Run with 8 workers
   mtlog-audit torture --iterations 1000000 --parallel 16  # Million iterations with 16 workers`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			logger.Log.Info("Starting torture tests...")
 			logger.Log.Info("Iterations: {count}", iterations)
 			logger.Log.Info("Scenario: {name}", scenario)

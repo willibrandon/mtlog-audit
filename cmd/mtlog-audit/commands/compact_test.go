@@ -52,7 +52,7 @@ func TestCompactCommand(t *testing.T) {
 		}
 	}
 
-	w.Close()
+	_ = w.Close()
 
 	// Test dry run
 	t.Run("DryRun", func(t *testing.T) {
@@ -60,7 +60,7 @@ func TestCompactCommand(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to reopen WAL: %v", err)
 		}
-		defer w2.Close()
+		defer func() { _ = w2.Close() }()
 
 		compactor := wal.NewCompactor(w2, nil)
 		err = performDryRun(compactor, w2)
@@ -75,7 +75,7 @@ func TestCompactCommand(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to reopen WAL: %v", err)
 		}
-		defer w2.Close()
+		defer func() { _ = w2.Close() }()
 
 		initialSize := calculateTotalSize(w2)
 
@@ -104,7 +104,7 @@ func TestCompactCommand(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to reopen WAL: %v", err)
 		}
-		defer w2.Close()
+		defer func() { _ = w2.Close() }()
 
 		compactor := wal.NewCompactor(w2, &wal.CompactionPolicy{
 			MinSegments:       1,
@@ -165,7 +165,7 @@ func TestCompactionPolicyValidation(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Failed to create WAL: %v", err)
 				}
-				defer w.Close()
+				defer func() { _ = w.Close() }()
 
 				compactor := wal.NewCompactor(w, policy)
 				if compactor == nil {
@@ -213,5 +213,5 @@ func TestCalculateTotalSize(t *testing.T) {
 		t.Error("Total size should not be negative")
 	}
 
-	w.Close()
+	_ = w.Close()
 }

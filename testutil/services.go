@@ -1,3 +1,4 @@
+// Package testutil provides test utilities and helpers for integration tests.
 package testutil
 
 import (
@@ -7,9 +8,13 @@ import (
 	"os"
 	"time"
 
+	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
 	"github.com/aws/aws-sdk-go/aws"
+	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
 	"github.com/aws/aws-sdk-go/aws/session"
+	//nolint:staticcheck // AWS SDK v1 - migration to v2 planned
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
@@ -38,7 +43,7 @@ func (sc *ServiceChecker) IsMinIOAvailable() bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return resp.StatusCode == http.StatusOK
 }
@@ -54,7 +59,7 @@ func (sc *ServiceChecker) IsLocalStackAvailable() bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return resp.StatusCode == http.StatusOK
 }
@@ -67,7 +72,7 @@ func (sc *ServiceChecker) IsAzuriteAvailable() bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Azurite returns 403 for unauthorized, which means it's running
 	// 200 would mean successful auth (shouldn't happen without proper headers)
@@ -81,7 +86,7 @@ func (sc *ServiceChecker) IsFakeGCSAvailable() bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized
 }

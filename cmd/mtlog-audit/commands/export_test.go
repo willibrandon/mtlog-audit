@@ -58,7 +58,7 @@ func TestExportCommand(t *testing.T) {
 			t.Fatalf("Failed to write event: %v", err)
 		}
 	}
-	w.Close()
+	_ = w.Close()
 
 	// Test JSON export
 	t.Run("ExportJSON", func(t *testing.T) {
@@ -70,7 +70,7 @@ func TestExportCommand(t *testing.T) {
 		}
 
 		// Verify output
-		data, err := os.ReadFile(outputPath)
+		data, err := os.ReadFile(outputPath) // #nosec G304 - test file path
 		if err != nil {
 			t.Fatalf("Failed to read output file: %v", err)
 		}
@@ -95,11 +95,11 @@ func TestExportCommand(t *testing.T) {
 		}
 
 		// Verify output
-		file, err := os.Open(outputPath)
+		file, err := os.Open(outputPath) // #nosec G304 - test file path
 		if err != nil {
 			t.Fatalf("Failed to open CSV file: %v", err)
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		reader := csv.NewReader(file)
 		records, err := reader.ReadAll()
@@ -139,7 +139,7 @@ func TestExportCommand(t *testing.T) {
 		}
 
 		// Verify output
-		data, err := os.ReadFile(outputPath)
+		data, err := os.ReadFile(outputPath) // #nosec G304 - test file path
 		if err != nil {
 			t.Fatalf("Failed to read output file: %v", err)
 		}
@@ -304,7 +304,7 @@ func testExportJSON(walPath, outputPath string, pretty bool) error {
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	events, err := reader.ReadAll()
 	if err != nil {
@@ -319,7 +319,7 @@ func testExportCSV(walPath, outputPath string) error {
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	events, err := reader.ReadAll()
 	if err != nil {
@@ -334,7 +334,7 @@ func testExportJSONL(walPath, outputPath string) error {
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	events, err := reader.ReadAll()
 	if err != nil {
