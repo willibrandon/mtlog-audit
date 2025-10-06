@@ -117,6 +117,22 @@ auditSink, err := audit.New(
 
 ## Development
 
+### Prerequisites
+
+**Go 1.21+** is required.
+
+**Windows**: Install [MinGW-w64](https://www.mingw-w64.org/) for CGO support (required for race detector):
+
+```powershell
+# Using Chocolatey
+choco install mingw -y
+
+# After installation, restart your terminal or run:
+refreshenv
+```
+
+**macOS/Linux**: CGO works out of the box with system compilers.
+
 ### Building
 
 ```bash
