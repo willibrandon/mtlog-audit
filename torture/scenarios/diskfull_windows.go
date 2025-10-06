@@ -24,6 +24,7 @@ func getAvailableDiskSpace(path string) (uint64, error) {
 		return 0, err
 	}
 
+	//nolint:gosec // G103: Windows syscall requires unsafe pointer conversions
 	ret, _, err := getDiskFreeSpaceEx.Call(
 		uintptr(unsafe.Pointer(pathPtr)),
 		uintptr(unsafe.Pointer(&freeBytesAvailable)),
