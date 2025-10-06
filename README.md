@@ -121,15 +121,16 @@ auditSink, err := audit.New(
 
 **Go 1.21+** is required.
 
-**Windows**: Install [MinGW-w64](https://www.mingw-w64.org/) for CGO support (required for race detector):
+**Windows**: Install MinGW-w64 for CGO support (required for race detector):
 
-```powershell
-# Using Chocolatey
-choco install mingw -y
+1. Install MSYS2 from https://www.msys2.org/
+2. In the MSYS2 terminal, run:
+   ```bash
+   pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain
+   ```
+3. Add `C:\msys64\ucrt64\bin` to your PATH environment variable
 
-# After installation, restart your terminal or run:
-refreshenv
-```
+See https://code.visualstudio.com/docs/cpp/config-mingw for detailed instructions.
 
 **macOS/Linux**: CGO works out of the box with system compilers.
 
