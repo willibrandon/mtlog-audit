@@ -30,7 +30,11 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o bin/mtlog-audit ./cmd/mtlog-audit
 
 test:
-	CGO_ENABLED=0 go test -race -coverprofile=coverage.out ./...
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		go test -coverprofile=coverage.out ./...; \
+	else \
+		go test -race -coverprofile=coverage.out ./...; \
+	fi
 
 fmt:
 	go fmt ./...
